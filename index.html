@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>重庆美食地图</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ee;
+      --panel: #fffdf9;
+      --ink: #24211d;
+      --muted: #71695d;
+      --line: #dfd6c8;
+      --brand: #c33d2e;
+      --meal: #b64232;
+      --snack: #d68a1f;
+      --hotpot: #8f3a55;
+      --sweet: #347f72;
+      --place: #3c6fa7;
+      --weak: #7b746a;
+      --shadow: 0 14px 35px rgba(46, 35, 21, .12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      height: 100%;
+      min-height: 100vh;
+      overflow: hidden;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(340px, 410px) minmax(0, 1fr);
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    aside {
+      z-index: 5;
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    header {
+      flex: 0 0 auto;
+      padding: 22px 22px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .toolbar {
+      flex: 0 0 auto;
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fffaf2;
+    }
+
+    .search {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      background: white;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .search:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(195, 61, 46, .12);
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1;
+      background: white;
+      cursor: pointer;
+    }
+
+    .filter.active {
+      color: white;
+      border-color: var(--brand);
+      background: var(--brand);
+    }
+
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 10px 12px 120px;
+    }
+
+    .item {
+      width: 100%;
+      margin: 0 0 8px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 11px 12px;
+      text-align: left;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .item:hover,
+    .item.active {
+      border-color: var(--line);
+      background: #fff7eb;
+    }
+
+    .item-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 5px;
+      font-weight: 700;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 4px 7px;
+      color: white;
+      font-weight: 600;
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+      background: var(--weak);
+    }
+
+    .item-address,
+    .item-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .item-note {
+      margin-top: 4px;
+    }
+
+    #map {
+      height: 100vh;
+      min-width: 0;
+      background: #e6ded1;
+    }
+
+    .pin {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border: 2px solid #fff;
+      border-radius: 50% 50% 50% 8px;
+      color: white;
+      font-weight: 800;
+      font-size: 12px;
+      box-shadow: 0 7px 18px rgba(30, 22, 18, .24);
+      transform: rotate(-45deg);
+    }
+
+    .pin span {
+      transform: rotate(45deg);
+    }
+
+    .pin.snack { background: var(--snack); }
+    .pin.meal { background: var(--meal); }
+    .pin.hotpot { background: var(--hotpot); }
+    .pin.sweet { background: var(--sweet); }
+    .pin.place { background: var(--place); }
+    .pin.low {
+      background: var(--weak);
+      border-style: dashed;
+    }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 8px;
+    }
+
+    .popup {
+      width: 240px;
+    }
+
+    .popup h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    .popup p {
+      margin: 0 0 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .popup a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      border-radius: 6px;
+      padding: 0 10px;
+      color: white;
+      font-size: 12px;
+      text-decoration: none;
+      background: var(--brand);
+    }
+
+    .empty,
+    .unmapped {
+      margin: 14px 4px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      background: #fffaf2;
+    }
+
+    .unmapped strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    @media (max-width: 820px) {
+      body {
+        overflow: auto;
+      }
+
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 58vh auto;
+        height: auto;
+        min-height: 100vh;
+      }
+
+      aside {
+        grid-row: 2;
+        min-height: 42vh;
+        border-top: 1px solid var(--line);
+        border-right: 0;
+      }
+
+      #map {
+        grid-row: 1;
+        height: 58vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside>
+      <header>
+        <h1>重庆美食地图</h1>
+        <p class="summary">按你给的清单整理。灰色虚线点是小摊、片区或分店不确定项，导航前建议再核对营业状态。</p>
+      </header>
+
+      <section class="toolbar">
+        <input class="search" id="search" type="search" placeholder="搜店名、地址、菜品">
+        <div class="filters" id="filters"></div>
+        <div class="meta">
+          <span id="count"></span>
+          <span>坐标已为 OSM 底图做偏移校正</span>
+        </div>
+      </section>
+
+      <section class="list" id="list"></section>
+    </aside>
+
+    <div id="map"></div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const categories = {
+      all: "全部",
+      snack: "早餐小吃",
+      meal: "江湖家常",
+      hotpot: "火锅串串",
+      sweet: "甜品饮品",
+      place: "片区景点"
+    };
+
+    const items = [
+      {
+        title: "长安医院住院部门口早餐摊",
+        name: "重庆三博长安医院住院部A区",
+        lat: 29.576461,
+        lng: 106.551353,
+        category: "snack",
+        confidence: "low",
+        address: "建新东路65号重庆三博长安医院附近",
+        note: "早餐摊未查到固定店铺，先标住院部附近。"
+      },
+      {
+        title: "廖家妹油茶",
+        name: "廖家妹油茶店",
+        lat: 29.487575,
+        lng: 106.49293,
+        category: "snack",
+        confidence: "high",
+        address: "大渡口区跃进路27号",
+        note: "油茶。"
+      },
+      {
+        title: "谢小路糯米团",
+        name: "谢小路",
+        lat: 29.519655,
+        lng: 106.512662,
+        category: "snack",
+        confidence: "low",
+        address: "九龙坡区谢小路附近",
+        note: "小摊名未查到固定门牌，先标谢小路路段。"
+      },
+      {
+        title: "吴记豆花面",
+        name: "吴记豆花面总店",
+        lat: 29.523855,
+        lng: 106.516916,
+        category: "snack",
+        confidence: "high",
+        address: "九龙坡区谢家湾正街19号附25号",
+        note: "豆花面。"
+      },
+      {
+        title: "熨斗糕老烧饼",
+        name: "熨斗糕老烧饼",
+        lat: 29.553352,
+        lng: 106.570317,
+        category: "snack",
+        confidence: "high",
+        address: "渝中区和平路133号旁边梯坎儿",
+        note: "较场口地铁站5号口附近。"
+      },
+      {
+        title: "长生桥赶场",
+        name: "长生桥",
+        lat: 29.510924,
+        lng: 106.658049,
+        category: "place",
+        confidence: "low",
+        address: "南岸区长生桥镇/长生桥地铁站附近",
+        note: "赶场范围不是单一门牌，先标片区中心。"
+      },
+      {
+        title: "山城家常菜",
+        name: "山城家常菜",
+        lat: 29.556022,
+        lng: 106.578494,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区五一路250号",
+        note: "家常菜。"
+      },
+      {
+        title: "老太婆肥肠蹄花",
+        name: "老太婆肥肠蹄花汤(晓月店)",
+        lat: 29.538646,
+        lng: 106.582142,
+        category: "meal",
+        confidence: "medium",
+        address: "南岸区南坪东路585号附18号",
+        note: "同名分店较多，这里标南岸晓月店。"
+      },
+      {
+        title: "樊氏江湖菜",
+        name: "樊氏江湖菜(铁板巷店)",
+        lat: 29.561082,
+        lng: 106.57824,
+        category: "meal",
+        confidence: "medium",
+        address: "渝中区临江支路32号自编号3号附近",
+        note: "清单写“梵氏”，公开信息多写作“樊氏”；茄龙、姜丝兔。"
+      },
+      {
+        title: "黑大兔",
+        name: "江湖黑大兔(南滨路旗舰店)",
+        lat: 29.517165,
+        lng: 106.539707,
+        category: "meal",
+        confidence: "high",
+        address: "南岸区南滨西路2号附35号",
+        note: "专做兔。"
+      },
+      {
+        title: "和记火爆",
+        name: "和记火爆(南滨路店)",
+        lat: 29.541567,
+        lng: 106.581252,
+        category: "meal",
+        confidence: "high",
+        address: "南岸区海棠溪街道滨江路西段1号",
+        note: "火爆菜。"
+      },
+      {
+        title: "纯阳酒家",
+        name: "纯阳老酒馆·川菜(七星岗店)",
+        lat: 29.554631,
+        lng: 106.561284,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区观音岩中一支路50号",
+        note: "七星岗地铁站附近。"
+      },
+      {
+        title: "响火锅",
+        name: "渝味响火锅(总店)",
+        lat: 29.540188,
+        lng: 106.511439,
+        category: "hotpot",
+        confidence: "high",
+        address: "渝中区大坪正街124-1-2号",
+        note: "大坪总店。"
+      },
+      {
+        title: "长旭大牛串串",
+        name: "长旭大牛串串(大堰直营老店)",
+        lat: 29.490381,
+        lng: 106.497853,
+        category: "hotpot",
+        confidence: "high",
+        address: "大渡口区跃进路587号-593号",
+        note: "串串。"
+      },
+      {
+        title: "精华黑豆花蛙鱼",
+        name: "精华黑豆花美蛙鱼自助(万豪酒店国贸中心店)",
+        lat: 29.555178,
+        lng: 106.574244,
+        category: "hotpot",
+        confidence: "high",
+        address: "渝中区青年路77号LG11室",
+        note: "黑豆花美蛙鱼。"
+      },
+      {
+        title: "古法脆皮烧鸡",
+        name: "古法脆皮烧鸡(紫荆广场店)",
+        lat: 29.588994,
+        lng: 106.533728,
+        category: "meal",
+        confidence: "high",
+        address: "两江新区红黄路127号附3-11",
+        note: "烧鸡。"
+      },
+      {
+        title: "雷家老农民",
+        name: "雷家老农民非遗酸辣粉(三峡广场一店)",
+        lat: 29.557229,
+        lng: 106.462115,
+        category: "snack",
+        confidence: "high",
+        address: "沙坪坝区渝碚路30-23号",
+        note: "酸辣粉、凉面。"
+      },
+      {
+        title: "亚歌芋圆",
+        name: "亚歌的芋圆(观音桥店)",
+        lat: 29.577744,
+        lng: 106.538783,
+        category: "sweet",
+        confidence: "high",
+        address: "两江新区塔坪路55号北仓文创园6-5",
+        note: "芋圆。"
+      },
+      {
+        title: "胖子小吃",
+        name: "胖子小吃(炫地7街店)",
+        lat: 29.557607,
+        lng: 106.46001,
+        category: "snack",
+        confidence: "medium",
+        address: "沙坪坝区三峡广场地下购物中心I区35号",
+        note: "同名较多，这里标重师/炫地7街一带的胖子小吃。"
+      },
+      {
+        title: "藕王抄手",
+        name: "重庆大学B区正门附近",
+        lat: 29.568981,
+        lng: 106.462187,
+        category: "snack",
+        confidence: "low",
+        address: "沙坪坝区重庆大学B区门口附近",
+        note: "只查到“重大B区门口左侧”的线索，先标校门。"
+      },
+      {
+        title: "秀兰面店坊",
+        name: "秀兰面点坊",
+        lat: 29.566108,
+        lng: 106.463738,
+        category: "snack",
+        confidence: "high",
+        address: "沙坪坝区正街124号",
+        note: "面点。"
+      },
+      {
+        title: "向记独一味烤鱼",
+        name: "向记独一味古法烤鱼(总店)",
+        lat: 29.561252,
+        lng: 106.530066,
+        category: "meal",
+        confidence: "high",
+        address: "两江新区金源路66号附3号",
+        note: "烤鱼。"
+      },
+      {
+        title: "阿辉黔江鸡杂",
+        name: "阿辉黔江鸡杂(解放碑店)",
+        lat: 29.558367,
+        lng: 106.575191,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区邹容路114号来龙巷",
+        note: "黔江鸡杂。"
+      },
+      {
+        title: "彭娜娜米凉虾",
+        name: "彭娜娜米凉虾(爱琴海店)",
+        lat: 29.642359,
+        lng: 106.546276,
+        category: "sweet",
+        confidence: "high",
+        address: "两江新区金州大道30号附4号",
+        note: "米凉虾。"
+      },
+      {
+        title: "甘婆婆醪糟汤圆",
+        name: "甘婆婆醪糟汤圆",
+        lat: 29.5512,
+        lng: 106.594128,
+        category: "sweet",
+        confidence: "high",
+        address: "南岸区上新街54号",
+        note: "黑米凉糕、醪糟汤圆。"
+      },
+      {
+        title: "三样子",
+        name: "三样子(弹子石总店)",
+        lat: 29.584517,
+        lng: 106.592896,
+        category: "sweet",
+        confidence: "medium",
+        address: "南岸区群慧路21号",
+        note: "同名分店较多，这里标弹子石总店。"
+      },
+      {
+        title: "无名豆花",
+        name: "无名豆花",
+        lat: 29.555857,
+        lng: 106.572636,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区大同巷11号",
+        note: "豆花饭。"
+      },
+      {
+        title: "尘香",
+        name: "尘香·传统川菜(创汇首座店)",
+        lat: 29.553872,
+        lng: 106.577847,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区新华路388号创汇首座LG层",
+        note: "人均约100的餐厅。"
+      },
+      {
+        title: "光环购物公园 悬浮森林",
+        name: "沐光森林",
+        lat: 29.649382,
+        lng: 106.528951,
+        category: "place",
+        confidence: "high",
+        address: "两江新区湖彩路118号",
+        note: "光环购物公园内，重光地铁站附近。"
+      },
+      {
+        title: "陋烧烤",
+        name: "陋烧烤",
+        lat: 29.649795,
+        lng: 106.523068,
+        category: "hotpot",
+        confidence: "high",
+        address: "两江新区湖红路415号附57号",
+        note: "烧烤。"
+      },
+      {
+        title: "三妹面庄",
+        name: "三妹面庄(学府雅居店)",
+        lat: 29.499999,
+        lng: 106.572329,
+        category: "snack",
+        confidence: "medium",
+        address: "南岸区龙景苑东南门旁",
+        note: "南岸面馆同名较多，这里标学府雅居店。"
+      },
+      {
+        title: "临华老面馆",
+        name: "临华老面馆",
+        lat: 29.556277,
+        lng: 106.561287,
+        category: "snack",
+        confidence: "high",
+        address: "渝中区临华路55号",
+        note: "渝中区面馆。"
+      },
+      {
+        title: "山城羊肉馆",
+        name: "山城羊肉馆(阳光星座店)",
+        lat: 29.554907,
+        lng: 106.573677,
+        category: "meal",
+        confidence: "high",
+        address: "渝中区民生路9号阳光星座3楼",
+        note: "渝中区羊肉馆。"
+      },
+      {
+        title: "野水沟",
+        name: "华新街野水沟社区",
+        lat: 29.572654,
+        lng: 106.536641,
+        category: "place",
+        confidence: "low",
+        address: "华新街中野路与建新东路交叉口附近",
+        note: "烧白、炒鸡、拌菜等为片区/市场型吃法，先标野水沟社区。"
+      },
+      {
+        title: "挑挑糍粑",
+        name: "华新街地铁站",
+        lat: 29.563956,
+        lng: 106.537132,
+        category: "snack",
+        confidence: "low",
+        address: "华新街地铁站出口附近",
+        note: "按“地铁站口/天桥下”线索标点，小摊位置会变。"
+      },
+      {
+        title: "李若桃",
+        name: "李若桃·手作酸奶铺(观音桥步行街店)",
+        lat: 29.57362,
+        lng: 106.533083,
+        category: "sweet",
+        confidence: "high",
+        address: "观音桥步行街1期1-14",
+        note: "饮品。"
+      },
+      {
+        title: "豆吉汤圆奶茶",
+        name: "豆吉汤圆奶茶(凯旋路电梯店)",
+        lat: 29.552009,
+        lng: 106.576625,
+        category: "sweet",
+        confidence: "high",
+        address: "渝中区凯旋路电梯附近",
+        note: "饮品。"
+      },
+      {
+        title: "璞孃食糖",
+        name: "璞孃食糖(黄泥磅店)",
+        lat: 29.595014,
+        lng: 106.534505,
+        category: "sweet",
+        confidence: "high",
+        address: "两江新区黄泥磅紫园路49号",
+        note: "港风糖水。"
+      }
+    ];
+
+    const unmapped = [
+      "土豆丝饼：清单里写“随便买，小摊都有”，不标固定点。",
+      "特产：渝兄怪味胡豆、陈昌银麻花、天友酸奶牛奶、合川肉片、牛浪汉豆腐香干，适合在超市、特产店、机场/高铁站按品牌买。"
+    ];
+
+    const outOfChina = (lat, lng) => lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271;
+    const transformLat = (x, y) => {
+      let ret = -100 + 2 * x + 3 * y + .2 * y * y + .1 * x * y + .2 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+      ret += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+      return ret;
+    };
+    const transformLng = (x, y) => {
+      let ret = 300 + x + 2 * y + .1 * x * x + .1 * x * y + .1 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+      ret += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+      return ret;
+    };
+    const gcjToWgs = (lat, lng) => {
+      if (outOfChina(lat, lng)) return { lat, lng };
+      const a = 6378245;
+      const ee = 0.006693421622965943;
+      let dLat = transformLat(lng - 105, lat - 35);
+      let dLng = transformLng(lng - 105, lat - 35);
+      const radLat = lat / 180 * Math.PI;
+      let magic = Math.sin(radLat);
+      magic = 1 - ee * magic * magic;
+      const sqrtMagic = Math.sqrt(magic);
+      dLat = (dLat * 180) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+      dLng = (dLng * 180) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+      return { lat: lat * 2 - (lat + dLat), lng: lng * 2 - (lng + dLng) };
+    };
+
+    items.forEach((item) => {
+      const converted = gcjToWgs(item.lat, item.lng);
+      item.mapLat = converted.lat;
+      item.mapLng = converted.lng;
+    });
+
+    const map = L.map("map", {
+      zoomControl: false
+    });
+
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const bounds = L.latLngBounds(items.map((item) => [item.mapLat, item.mapLng]));
+    map.fitBounds(bounds.pad(.12));
+
+    const state = {
+      category: "all",
+      query: "",
+      active: null
+    };
+
+    const filtersEl = document.getElementById("filters");
+    const listEl = document.getElementById("list");
+    const countEl = document.getElementById("count");
+    const searchEl = document.getElementById("search");
+    const markers = new Map();
+
+    Object.entries(categories).forEach(([key, label]) => {
+      const button = document.createElement("button");
+      button.className = `filter ${key === state.category ? "active" : ""}`;
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        state.category = key;
+        document.querySelectorAll(".filter").forEach((el) => el.classList.remove("active"));
+        button.classList.add("active");
+        render();
+      });
+      filtersEl.appendChild(button);
+    });
+
+    const categoryInitial = (item) => categories[item.category].slice(0, 1);
+    const linkFor = (item) => {
+      const q = encodeURIComponent(item.name);
+      return `https://maps.apple.com/?q=${q}&ll=${item.lat},${item.lng}`;
+    };
+
+    const makeIcon = (item) => L.divIcon({
+      className: "",
+      html: `<div class="pin ${item.category} ${item.confidence === "low" ? "low" : ""}"><span>${categoryInitial(item)}</span></div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 29],
+      popupAnchor: [0, -26]
+    });
+
+    const popupHtml = (item) => `
+      <div class="popup">
+        <h2>${item.title}</h2>
+        <p><strong>${item.name}</strong></p>
+        <p>${item.address}</p>
+        <p>${item.note}</p>
+        <a href="${linkFor(item)}" target="_blank" rel="noreferrer">打开 Apple 地图</a>
+      </div>
+    `;
+
+    items.forEach((item) => {
+      const marker = L.marker([item.mapLat, item.mapLng], { icon: makeIcon(item) })
+        .bindPopup(popupHtml(item));
+      marker.on("click", () => {
+        state.active = item.title;
+        renderList(currentItems(), false);
+      });
+      marker.addTo(map);
+      markers.set(item.title, marker);
+    });
+
+    const currentItems = () => {
+      const query = state.query.trim().toLowerCase();
+      return items.filter((item) => {
+        const categoryMatch = state.category === "all" || item.category === state.category;
+        const text = `${item.title} ${item.name} ${item.address} ${item.note}`.toLowerCase();
+        return categoryMatch && (!query || text.includes(query));
+      });
+    };
+
+    const renderMarkers = (visibleItems) => {
+      const visible = new Set(visibleItems.map((item) => item.title));
+      items.forEach((item) => {
+        const marker = markers.get(item.title);
+        const isVisible = visible.has(item.title);
+        if (isVisible && !map.hasLayer(marker)) marker.addTo(map);
+        if (!isVisible && map.hasLayer(marker)) marker.remove();
+      });
+      if (visibleItems.length) {
+        map.fitBounds(L.latLngBounds(visibleItems.map((item) => [item.mapLat, item.mapLng])).pad(.18), {
+          animate: true,
+          maxZoom: visibleItems.length === 1 ? 16 : 13
+        });
+      }
+    };
+
+    const confidenceText = (confidence) => ({
+      high: "准",
+      medium: "分店",
+      low: "待核"
+    }[confidence]);
+
+    const renderList = (visibleItems, updateBounds = true) => {
+      listEl.innerHTML = "";
+      countEl.textContent = `${visibleItems.length} 个定位点`;
+
+      if (!visibleItems.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "没有匹配的地点。";
+        listEl.appendChild(empty);
+        return;
+      }
+
+      visibleItems.forEach((item) => {
+        const button = document.createElement("button");
+        button.className = `item ${state.active === item.title ? "active" : ""}`;
+        button.type = "button";
+        button.innerHTML = `
+          <div class="item-title">
+            <span>${item.title}</span>
+            <span class="badge">${confidenceText(item.confidence)}</span>
+          </div>
+          <p class="item-address">${item.name} · ${item.address}</p>
+          <p class="item-note">${item.note}</p>
+        `;
+        button.addEventListener("click", () => {
+          const marker = markers.get(item.title);
+          state.active = item.title;
+          map.setView([item.mapLat, item.mapLng], 16, { animate: true });
+          marker.openPopup();
+          renderList(visibleItems, false);
+        });
+        listEl.appendChild(button);
+      });
+
+      const note = document.createElement("div");
+      note.className = "unmapped";
+      note.innerHTML = `<strong>未单独上图</strong>${unmapped.map((text) => `<div>${text}</div>`).join("")}`;
+      listEl.appendChild(note);
+
+      if (updateBounds) renderMarkers(visibleItems);
+    };
+
+    const render = () => {
+      const visibleItems = currentItems();
+      renderList(visibleItems);
+    };
+
+    searchEl.addEventListener("input", (event) => {
+      state.query = event.target.value;
+      state.active = null;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
