@@ -1,0 +1,3460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>每日营养追踪 · Nutrition Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./supabase-config.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ee;
+      --panel: #fffdf9;
+      --ink: #24211d;
+      --muted: #71695d;
+      --line: #dfd6c8;
+      --brand: #c33d2e;
+      --carbs: #d68a1f;
+      --protein: #347f72;
+      --fat: #8f3a55;
+      --fiber: #3c6fa7;
+      --weak: #7b746a;
+      --good: #2f8f5d;
+      --warn: #c97a1a;
+      --bad: #b4382a;
+      --shadow: 0 14px 35px rgba(46, 35, 21, .12);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    header {
+      padding: 22px 22px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .day-picker {
+      display: flex;
+      gap: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+      background: #fffaf2;
+    }
+
+    .day {
+      flex: 0 0 auto;
+      min-width: 56px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 6px;
+      text-align: center;
+      background: white;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+
+    .day:hover { border-color: #c8bda8; }
+
+    .day.active {
+      color: white;
+      border-color: var(--brand);
+      background: var(--brand);
+    }
+
+    .day .dow {
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      opacity: .75;
+    }
+
+    .day .dom {
+      margin-top: 3px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .day .kcal {
+      margin-top: 3px;
+      font-size: 10px;
+      opacity: .7;
+    }
+
+    .meals {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 12px 16px 24px;
+    }
+
+    .meal-group {
+      margin-bottom: 18px;
+    }
+
+    .meal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .meal-head .meal-kcal {
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .meal-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      padding: 9px 0;
+      border-bottom: 1px dashed var(--line);
+    }
+    .meal-item:last-child { border-bottom: none; }
+
+    .meal-item .name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .meal-item .qty {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meal-item .macros {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .meal-item .macros span b { color: var(--ink); font-weight: 600; }
+
+    .meal-item .kcal-num {
+      align-self: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    main {
+      padding: 26px 28px 60px;
+      overflow-y: auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      grid-column: span 12;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .card .big {
+      margin: 0;
+      font-weight: 700;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .card .big .unit {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .card .sub {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .ring-card  { grid-column: span 4; display: flex; flex-direction: column; gap: 8px; }
+    .macros-card { grid-column: span 8; }
+    .trend-card  { grid-column: span 7; }
+    .stack-card  { grid-column: span 5; }
+    .targets-card { grid-column: span 12; }
+
+    @media (max-width: 1100px) {
+      .ring-card, .macros-card, .trend-card, .stack-card { grid-column: span 12; }
+    }
+
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid var(--line); }
+      main { padding: 18px; }
+    }
+
+    .ring-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 220px;
+      aspect-ratio: 1 / 1;
+      margin: 4px auto 0;
+    }
+
+    .ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .ring-center .val {
+      font-weight: 700;
+      font-size: 26px;
+    }
+    .ring-center .lbl {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .legend .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 50%;
+      vertical-align: -1px;
+    }
+
+    .targets {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .target {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fffaf2;
+    }
+
+    .target .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .target .key { font-weight: 600; font-size: 13px; }
+    .target .val { font-size: 13px; color: var(--ink); }
+    .target .val .goal { color: var(--muted); font-size: 11px; }
+
+    .bar {
+      position: relative;
+      height: 8px;
+      border-radius: 999px;
+      background: #ece2ce;
+      overflow: hidden;
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--brand);
+      transition: width .35s ease;
+    }
+
+    .pill {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .pill.good { color: var(--good); background: rgba(47,143,93,.12); }
+    .pill.warn { color: var(--warn); background: rgba(201,122,26,.14); }
+    .pill.bad  { color: var(--bad);  background: rgba(180,56,42,.12); }
+
+    .chart-box {
+      position: relative;
+      width: 100%;
+      height: 240px;
+    }
+
+    .footnote {
+      margin: 26px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .footnote a { color: var(--brand); }
+
+    /* ---------- Auth bar ---------- */
+    .auth-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+    }
+
+    .auth-status {
+      min-width: 0;
+      flex: 1;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .auth-status b { color: var(--ink); font-weight: 700; }
+
+    .auth-status .demo-pill {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: white;
+      background: var(--brand);
+    }
+    .auth-status .live-pill {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: white;
+      background: var(--good);
+    }
+
+    /* ---------- Profile button + summary ---------- */
+    .profile-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fffaf2;
+    }
+
+    .profile-bar .who {
+      min-width: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--ink);
+    }
+
+    .profile-bar .who b { font-weight: 700; }
+    .profile-bar .who .muted { color: var(--muted); }
+
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 11px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+      background: white;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: #c8bda8; }
+    .btn.primary {
+      color: white;
+      border-color: var(--brand);
+      background: var(--brand);
+    }
+    .btn.primary:hover { filter: brightness(.95); }
+    .btn.ghost {
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .link-btn {
+      border: none;
+      padding: 0;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--brand);
+      background: transparent;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    /* ---------- Modal ---------- */
+    .modal[hidden] { display: none; }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(46, 35, 21, .42);
+      backdrop-filter: blur(2px);
+    }
+
+    .modal-card {
+      position: relative;
+      width: 100%;
+      max-width: 520px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: 0 30px 80px rgba(20, 14, 6, .35);
+    }
+
+    .modal-card > header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 22px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .modal-card > header h2 {
+      margin: 0;
+      font-size: 18px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--ink);
+    }
+
+    .close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 8px;
+      font-size: 22px;
+      line-height: 1;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+    .close:hover { background: #f1ead8; color: var(--ink); }
+
+    form#profileForm {
+      padding: 16px 22px 20px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    form#profileForm label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    form#profileForm input,
+    form#profileForm select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      background: white;
+      outline: none;
+    }
+
+    form#profileForm input:focus,
+    form#profileForm select:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(195, 61, 46, .12);
+    }
+
+    .calc-preview {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff3e0;
+      border: 1px solid #f0dcb5;
+    }
+
+    .calc-preview > div {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      text-align: center;
+    }
+
+    .calc-preview span {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .calc-preview b {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--ink);
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .form-hint {
+      margin: -4px 0 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    /* ---------- Body composition card ---------- */
+    .bodycomp-card { grid-column: span 12; }
+
+    .bc-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 6px 0 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 14px;
+    }
+
+    .bc-stat .lbl {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .bc-stat .val {
+      margin-top: 4px;
+      font-weight: 700;
+      font-size: 32px;
+      line-height: 1.05;
+    }
+
+    .bc-stat .val .unit {
+      margin-left: 3px;
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .bc-stat .delta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .trend.down { color: var(--good); font-weight: 600; }
+    .trend.up   { color: var(--bad);  font-weight: 600; }
+    .trend.flat { color: var(--muted); font-weight: 600; }
+
+    .bc-charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .bc-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .bc-chart-head h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .bc-chart-head .legend-mini {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .bc-chart-head .legend-mini i {
+      display: inline-block;
+      width: 16px;
+      height: 2px;
+      vertical-align: middle;
+      margin: 0 4px 2px 8px;
+    }
+
+    @media (max-width: 860px) {
+      .bc-stats { grid-template-columns: 1fr 1fr; }
+      .bc-stats > .btn { grid-column: 1 / -1; justify-self: start; }
+      .bc-charts { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- Training card ---------- */
+    .training-card { grid-column: span 12; }
+
+    .training-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 6px 0 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 14px;
+    }
+
+    .ts-stat .lbl {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .ts-stat .val {
+      margin-top: 4px;
+      font-weight: 700;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+
+    .ts-stat .val .unit {
+      margin-left: 3px;
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .ts-stat .sub {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .training-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .workout-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fffaf2;
+    }
+
+    .workout-item .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .workout-item .title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .workout-item .meta {
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .workout-item .burn {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .workout-item .remove {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+    .workout-item .remove:hover { color: var(--bad); background: #f7e9e7; }
+
+    .training-empty {
+      padding: 22px 18px;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 860px) {
+      .training-summary { grid-template-columns: 1fr 1fr; }
+      .training-summary > .btn { grid-column: 1 / -1; justify-self: start; }
+    }
+
+    /* ---------- Meal list: add button, brand chips, delete x ---------- */
+    .add-food-btn {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+
+    .meal-item {
+      position: relative;
+      grid-template-columns: 1fr auto auto;
+      gap: 4px 10px;
+    }
+
+    .meal-item .name .brand,
+    .meal-item .name .src {
+      display: inline-block;
+      margin-left: 5px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      vertical-align: 1px;
+    }
+    .meal-item .name .brand {
+      color: var(--muted);
+      background: #efe6d2;
+    }
+    .meal-item .name .src {
+      color: white;
+      background: var(--place);
+    }
+
+    .entry-x {
+      align-self: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      font-size: 14px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    .meal-item:hover .entry-x { opacity: 1; }
+    .entry-x:hover { color: var(--bad); border-color: #f1d3cd; background: #fbece9; }
+
+    /* ---------- Add-food modal ---------- */
+    .modal-card.wide { max-width: 580px; }
+
+    .search-bar {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+
+    .search-status {
+      font-size: 11px;
+      color: var(--muted);
+      margin: -4px 0 0;
+    }
+    .search-status.err { color: var(--bad); }
+
+    .search-results {
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+    }
+    .search-results:empty { display: none; }
+
+    .result {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .result:last-child { border-bottom: none; }
+    .result:hover, .result.selected {
+      background: #fff7eb;
+    }
+    .result .rname { font-weight: 600; font-size: 13px; line-height: 1.3; }
+    .result .rmeta { color: var(--muted); font-size: 11px; }
+    .result .rmacro { color: var(--muted); font-size: 11px; }
+    .result .rmacro b { color: var(--ink); font-weight: 600; }
+    .result .rkcal { align-self: center; font-weight: 700; font-size: 14px; }
+
+    .picked-card {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fffaf2;
+    }
+    .picked-card .pname { font-weight: 700; font-size: 14px; }
+    .picked-card .pmeta { color: var(--muted); font-size: 11px; }
+    .picked-card .pnuts {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .picked-card .pnuts > div {
+      text-align: center;
+    }
+    .picked-card .pnuts span {
+      font-size: 10px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .picked-card .pnuts b {
+      display: block;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .key-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .key-row label { font-size: 11px; }
+    .key-row .saved {
+      font-size: 11px;
+      color: var(--good);
+    }
+
+    details.key-disclosure {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+    details.key-disclosure > summary {
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      list-style: none;
+    }
+    details.key-disclosure > summary::before { content: "▸ "; }
+    details.key-disclosure[open] > summary::before { content: "▾ "; }
+    details.key-disclosure > div { margin-top: 10px; }
+    details.key-disclosure p { margin: 6px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+    details.key-disclosure a { color: var(--brand); }
+
+    /* ---------- Weekly review card ---------- */
+    .review-card {
+      grid-column: span 12;
+      background: linear-gradient(180deg, #fffdf9 0%, #fff8ec 100%);
+    }
+
+    .review-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 16px;
+    }
+
+    .review-head h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--ink);
+    }
+
+    .review-range {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .kpi {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+    }
+
+    .kpi .lbl {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .kpi .val {
+      margin-top: 6px;
+      font-weight: 700;
+      font-size: 22px;
+      line-height: 1.05;
+      color: var(--ink);
+    }
+
+    .kpi .val .unit {
+      margin-left: 2px;
+      font-weight: 500;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .kpi .val.good { color: var(--good); }
+    .kpi .val.bad  { color: var(--bad); }
+
+    .kpi .sub {
+      margin-top: 4px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1200px) {
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 700px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .insights-head {
+      margin: 18px 0 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .insights {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .insights li {
+      position: relative;
+      padding: 9px 12px 9px 30px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      background: #fffaf2;
+      border: 1px solid var(--line);
+    }
+
+    .insights li::before {
+      content: "•";
+      position: absolute;
+      left: 13px;
+      top: 7px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--brand);
+    }
+
+    .insights li b { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <header>
+        <h1>每日营养追踪</h1>
+        <p class="summary">A 7-day demo log built on USDA-style per-100 g nutrient values. Pick a day to see meals and macros.</p>
+        <div class="auth-bar" id="authBar">
+          <div class="auth-status" id="authStatus">—</div>
+          <button class="btn" id="authBtn">Sign in</button>
+        </div>
+        <div class="profile-bar">
+          <div class="who" id="profileWho">No profile yet — using FDA defaults.</div>
+          <button class="btn" id="openProfile">Set up</button>
+        </div>
+      </header>
+      <nav class="day-picker" id="dayPicker"></nav>
+      <div class="meals" id="meals"></div>
+    </aside>
+
+    <main>
+      <div class="grid">
+        <section class="card review-card">
+          <div class="review-head">
+            <h2>Weekly review</h2>
+            <span class="review-range" id="reviewRange">—</span>
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi" id="kpiBalance">
+              <div class="lbl">Energy balance</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+            <div class="kpi" id="kpiAdherence">
+              <div class="lbl">Calorie adherence</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+            <div class="kpi" id="kpiProtein">
+              <div class="lbl">Protein hits</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+            <div class="kpi" id="kpiTraining">
+              <div class="lbl">Training</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+            <div class="kpi" id="kpiWeight">
+              <div class="lbl">Weight trend</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+            <div class="kpi" id="kpiBf">
+              <div class="lbl">Body fat</div>
+              <div class="val">—</div>
+              <div class="sub">—</div>
+            </div>
+          </div>
+          <div class="bc-chart-head">
+            <h3>Daily intake vs. target</h3>
+            <span class="legend-mini">+ over · − under</span>
+          </div>
+          <div class="chart-box" style="height:170px"><canvas id="reviewDiffChart"></canvas></div>
+          <div class="insights-head">Insights</div>
+          <ul class="insights" id="reviewInsights"></ul>
+        </section>
+
+        <section class="card ring-card">
+          <h2>Calories today</h2>
+          <div class="ring-wrap">
+            <canvas id="ringChart"></canvas>
+            <div class="ring-center">
+              <div class="val" id="ringVal">0</div>
+              <div class="lbl">of <span id="ringGoal">2000</span> kcal</div>
+            </div>
+          </div>
+          <p class="sub" id="ringSub">—</p>
+        </section>
+
+        <section class="card macros-card">
+          <h2>Macro split</h2>
+          <p class="big" id="macrosBig">— <span class="unit">% of calories</span></p>
+          <div class="chart-box" style="height: 220px;">
+            <canvas id="macroChart"></canvas>
+          </div>
+          <div class="legend">
+            <span><i class="dot" style="background:var(--carbs)"></i>Carbs</span>
+            <span><i class="dot" style="background:var(--protein)"></i>Protein</span>
+            <span><i class="dot" style="background:var(--fat)"></i>Fat</span>
+          </div>
+        </section>
+
+        <section class="card training-card">
+          <h2>Training · selected day</h2>
+          <div class="training-summary">
+            <div class="ts-stat">
+              <div class="lbl">Calories burned</div>
+              <div class="val" id="tBurn">0 <span class="unit">kcal</span></div>
+              <div class="sub" id="tBurnSub">No sessions logged.</div>
+            </div>
+            <div class="ts-stat">
+              <div class="lbl">Adjusted daily target</div>
+              <div class="val" id="tTarget">— <span class="unit">kcal</span></div>
+              <div class="sub" id="tTargetSub">—</div>
+            </div>
+            <button class="btn primary" id="logWorkoutBtn">+ Log workout</button>
+          </div>
+          <div class="training-list" id="trainingList"></div>
+          <div class="bc-chart-head">
+            <h3>This week's burn</h3>
+            <span class="legend-mini">kcal/day from training</span>
+          </div>
+          <div class="chart-box" style="height:140px"><canvas id="trainingChart"></canvas></div>
+        </section>
+
+        <section class="card bodycomp-card">
+          <h2>Body composition · 30 days</h2>
+          <div class="bc-stats">
+            <div class="bc-stat">
+              <div class="lbl">Weight</div>
+              <div class="val" id="bcWeight">—</div>
+              <div class="delta" id="bcWeightDelta">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="lbl">Body fat</div>
+              <div class="val" id="bcBf">—</div>
+              <div class="delta" id="bcBfDelta">—</div>
+            </div>
+            <button class="btn primary" id="logWeightBtn">Log today</button>
+          </div>
+          <div class="bc-charts">
+            <div>
+              <div class="bc-chart-head">
+                <h3>Weight (kg)</h3>
+                <span class="legend-mini">daily<i style="background:rgba(195,61,46,.35)"></i> 7-day avg<i style="background:#c33d2e"></i></span>
+              </div>
+              <div class="chart-box" style="height:200px"><canvas id="weightChart"></canvas></div>
+            </div>
+            <div>
+              <div class="bc-chart-head">
+                <h3>Body fat (%)</h3>
+                <span class="legend-mini">weekly measurements</span>
+              </div>
+              <div class="chart-box" style="height:200px"><canvas id="bfChart"></canvas></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card trend-card">
+          <h2>7-day calorie trend</h2>
+          <p class="sub" id="trendSub">—</p>
+          <div class="chart-box">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card stack-card">
+          <h2>Macros across the week</h2>
+          <p class="sub">Grams of carbs, protein and fat per day.</p>
+          <div class="chart-box">
+            <canvas id="stackChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card targets-card">
+          <h2>Today vs. daily targets</h2>
+          <p class="sub" id="targetsSub">Reference values from FDA Daily Values for a 2,000 kcal diet. <button class="link-btn" id="openProfile2">Set up your profile</button> for personalized targets.</p>
+          <div class="targets" id="targets"></div>
+        </section>
+      </div>
+
+      <p class="footnote">
+        Demo data — not your real intake. Nutrition values modeled on
+        <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a>
+        (public domain, CC0). Daily reference values from the
+        <a href="https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels" target="_blank" rel="noopener">FDA Daily Values</a>.
+      </p>
+    </main>
+  </div>
+
+  <div class="modal" id="profileModal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <header>
+        <h2>Your profile</h2>
+        <button class="close" id="closeProfile" aria-label="Close">×</button>
+      </header>
+      <form id="profileForm">
+        <div class="form-row">
+          <label>Sex
+            <select name="sex" required>
+              <option value="">—</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </label>
+          <label>Age (years)
+            <input type="number" name="age" min="14" max="100" step="1" required>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label>Height (cm)
+            <input type="number" name="height" min="120" max="230" step="0.5" required>
+          </label>
+          <label>Weight (kg)
+            <input type="number" name="weight" min="35" max="200" step="0.1" required>
+          </label>
+        </div>
+
+        <label>Body fat % <span style="font-weight:500;color:var(--muted)">(optional — enables Katch-McArdle)</span>
+          <input type="number" name="bodyFat" min="3" max="60" step="0.1" placeholder="e.g. 18">
+        </label>
+
+        <label>Daily lifestyle activity <span style="font-weight:500;color:var(--muted)">(workouts logged separately)</span>
+          <select name="activity" required>
+            <option value="sedentary">Mostly sitting — desk job (× 1.25)</option>
+            <option value="light" selected>Some standing/walking — errands, light job (× 1.35)</option>
+            <option value="active">Active lifestyle — manual job, lots of walking (× 1.45)</option>
+          </select>
+        </label>
+
+        <label>Goal
+          <select name="goal" required>
+            <option value="cut">Cut — lose fat (−400 kcal · 2.2 g/kg protein)</option>
+            <option value="recomp" selected>Recomp — lose fat + build muscle (−150 kcal · 2.0 g/kg)</option>
+            <option value="maintain">Maintain (TDEE · 1.8 g/kg)</option>
+            <option value="bulk">Lean bulk (+250 kcal · 1.8 g/kg)</option>
+          </select>
+        </label>
+
+        <p class="form-hint">Multipliers cover non-training daily activity only — log workouts separately and they're added on top of your rest-day TDEE. BMR uses Mifflin–St Jeor (or Katch-McArdle if body fat is set). Fat target is 25% of calories (floor 0.8 g/kg); carbs absorb workout fuel.</p>
+
+        <div class="calc-preview" id="calcPreview">
+          <div><span>BMR</span><b id="prevBmr">—</b></div>
+          <div><span>TDEE</span><b id="prevTdee">—</b></div>
+          <div><span>Calories</span><b id="prevKcal">—</b></div>
+          <div><span>Protein</span><b id="prevProt">—</b></div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn ghost" id="clearProfile">Clear</button>
+          <button type="submit" class="btn primary">Save profile</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="authModal" hidden>
+    <div class="modal-backdrop" data-close-auth></div>
+    <div class="modal-card" style="max-width: 400px;">
+      <header>
+        <h2>Sign in</h2>
+        <button class="close" id="closeAuth" aria-label="Close">×</button>
+      </header>
+      <form id="authForm">
+        <label>Email
+          <input type="email" name="email" required placeholder="you@example.com" autocomplete="email">
+        </label>
+        <p class="form-hint">We'll email you a magic link — no password to remember. Click the link to finish signing in.</p>
+        <div id="authMsg" class="search-status"></div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary" id="authSubmit">Send magic link</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="addFoodModal" hidden>
+    <div class="modal-backdrop" data-close-food></div>
+    <div class="modal-card wide">
+      <header>
+        <h2>Add food · search USDA</h2>
+        <button class="close" id="closeAddFood" aria-label="Close">×</button>
+      </header>
+      <form id="addFoodForm" autocomplete="off">
+        <div class="form-row">
+          <label>Date
+            <input type="date" name="date" required>
+          </label>
+          <label>Meal
+            <select name="meal" required>
+              <option value="Breakfast">Breakfast</option>
+              <option value="Lunch">Lunch</option>
+              <option value="Snack">Snack</option>
+              <option value="Dinner">Dinner</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Search foods
+          <div class="search-bar">
+            <input type="search" name="q" placeholder='e.g. "oatmeal", "chicken breast", "kung pao"' autocomplete="off">
+            <button type="button" class="btn" id="searchBtn">Search</button>
+          </div>
+        </label>
+        <p class="search-status" id="searchStatus">Type a food and hit Search. Values are per 100 g.</p>
+        <div class="search-results" id="searchResults"></div>
+
+        <div id="pickedWrap" hidden>
+          <div class="picked-card" id="pickedCard"></div>
+          <div class="form-row" style="margin-top: 10px;">
+            <label>Amount (g)
+              <input type="number" name="g" min="1" max="2000" step="1" value="100" required>
+            </label>
+            <label>This entry's calories
+              <input type="text" id="entryKcal" readonly tabindex="-1" style="background:#f7f0e1; font-weight:700;">
+            </label>
+          </div>
+        </div>
+
+        <details class="key-disclosure">
+          <summary>USDA API key <span id="keyStatus" class="saved"></span></summary>
+          <div>
+            <div class="key-row">
+              <label>Your data.gov API key
+                <input type="text" id="usdaKeyInput" placeholder="paste key here">
+              </label>
+              <button type="button" class="btn" id="saveKeyBtn">Save</button>
+            </div>
+            <p>Default is <b>DEMO_KEY</b> (30 req/hr shared with all DEMO_KEY users, 50/day total). Get your own free key in 30 seconds at <a href="https://api.data.gov/signup/" target="_blank" rel="noopener">api.data.gov/signup</a> — 1,000 requests/hour.</p>
+          </div>
+        </details>
+
+        <div class="form-actions">
+          <button type="submit" class="btn primary" id="addEntryBtn" disabled>Add to meal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="workoutModal" hidden>
+    <div class="modal-backdrop" data-close-workout></div>
+    <div class="modal-card" style="max-width: 440px;">
+      <header>
+        <h2>Log workout</h2>
+        <button class="close" id="closeWorkout" aria-label="Close">×</button>
+      </header>
+      <form id="workoutForm">
+        <label>Date
+          <input type="date" name="date" required>
+        </label>
+        <label>Type
+          <select name="type" required>
+            <option value="bouldering" selected>Bouldering</option>
+            <option value="climbing">Sport climbing</option>
+            <option value="gym">Strength (gym)</option>
+            <option value="swimming">Swimming</option>
+            <option value="running">Running</option>
+            <option value="cycling">Cycling</option>
+            <option value="hiit">HIIT</option>
+            <option value="yoga">Yoga / mobility</option>
+            <option value="walking">Brisk walking</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div class="form-row">
+          <label>Duration (min)
+            <input type="number" name="min" min="5" max="480" step="5" value="60" required>
+          </label>
+          <label>Intensity
+            <select name="intensity">
+              <option value="light">Light</option>
+              <option value="moderate" selected>Moderate</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+        </div>
+        <div class="calc-preview" style="grid-template-columns: 1fr 1fr;">
+          <div><span>Estimated burn</span><b id="prevBurn">— kcal</b></div>
+          <div><span>New daily target</span><b id="prevDayTarget">— kcal</b></div>
+        </div>
+        <p class="form-hint">MET-based estimate × your profile weight × intensity factor (light × 0.8, moderate × 1.0, hard × 1.2). Set up your profile first if you haven't — the estimate needs your weight.</p>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Save workout</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="weightModal" hidden>
+    <div class="modal-backdrop" data-close-weight></div>
+    <div class="modal-card" style="max-width: 400px;">
+      <header>
+        <h2>Log weight</h2>
+        <button class="close" id="closeWeight" aria-label="Close">×</button>
+      </header>
+      <form id="weightForm">
+        <label>Date
+          <input type="date" name="date" required>
+        </label>
+        <label>Weight (kg)
+          <input type="number" name="weight" min="35" max="200" step="0.1" required>
+        </label>
+        <label>Body fat % <span style="font-weight:500;color:var(--muted)">(optional)</span>
+          <input type="number" name="bodyFat" min="3" max="60" step="0.1" placeholder="e.g. 18">
+        </label>
+        <p class="form-hint">Logging today also updates your profile weight so TDEE recalculates. Weigh-ins are best first thing in the morning, post-bathroom, pre-food.</p>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Supabase client + session state ----------
+    const SB = (window.supabase && window.SUPABASE_URL && window.SUPABASE_PUBLISHABLE_KEY)
+      ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_PUBLISHABLE_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        })
+      : null;
+    let SESSION = null;
+
+    // ---------- Food database (per 100 g, USDA-style approximations) ----------
+    const FOODS = {
+      oatmeal:        { name: "Oatmeal, cooked",         kcal: 71,  c: 12,  p: 2.5, f: 1.5, fiber: 1.7, sodium: 4 },
+      banana:         { name: "Banana",                   kcal: 89,  c: 23,  p: 1.1, f: 0.3, fiber: 2.6, sodium: 1 },
+      blueberries:    { name: "Blueberries",              kcal: 57,  c: 14,  p: 0.7, f: 0.3, fiber: 2.4, sodium: 1 },
+      greek_yogurt:   { name: "Greek yogurt, plain",      kcal: 59,  c: 3.6, p: 10,  f: 0.4, fiber: 0,   sodium: 36 },
+      almonds:        { name: "Almonds",                  kcal: 579, c: 22,  p: 21,  f: 50,  fiber: 12.5,sodium: 1 },
+      egg:            { name: "Egg, whole",               kcal: 155, c: 1.1, p: 13,  f: 11,  fiber: 0,   sodium: 124 },
+      whole_wheat:    { name: "Whole-wheat toast",        kcal: 247, c: 41,  p: 13,  f: 3.4, fiber: 7,   sodium: 400 },
+      avocado:        { name: "Avocado",                  kcal: 160, c: 9,   p: 2,   f: 15,  fiber: 6.7, sodium: 7 },
+      coffee_latte:   { name: "Latte, whole milk",        kcal: 56,  c: 4.5, p: 3,   f: 3,   fiber: 0,   sodium: 40 },
+
+      chicken_breast: { name: "Chicken breast, grilled",  kcal: 165, c: 0,   p: 31,  f: 3.6, fiber: 0,   sodium: 74 },
+      brown_rice:     { name: "Brown rice, cooked",       kcal: 112, c: 24,  p: 2.6, f: 0.9, fiber: 1.8, sodium: 5 },
+      white_rice:     { name: "White rice, cooked",       kcal: 130, c: 28,  p: 2.7, f: 0.3, fiber: 0.4, sodium: 1 },
+      broccoli:       { name: "Broccoli, steamed",        kcal: 35,  c: 7,   p: 2.4, f: 0.4, fiber: 3.3, sodium: 33 },
+      olive_oil:      { name: "Olive oil",                kcal: 884, c: 0,   p: 0,   f: 100, fiber: 0,   sodium: 2 },
+      salmon:         { name: "Salmon, baked",            kcal: 208, c: 0,   p: 20,  f: 13,  fiber: 0,   sodium: 59 },
+      tofu:           { name: "Tofu, firm",               kcal: 144, c: 2.8, p: 17,  f: 8.7, fiber: 2.3, sodium: 14 },
+      mapo_tofu:      { name: "Mapo tofu",                kcal: 152, c: 4.5, p: 10,  f: 11,  fiber: 1.5, sodium: 620 },
+      kung_pao:       { name: "Kung pao chicken",         kcal: 215, c: 8,   p: 17,  f: 13,  fiber: 1.4, sodium: 540 },
+      dan_dan:        { name: "Dan dan noodles",          kcal: 285, c: 38,  p: 9,   f: 11,  fiber: 2,   sodium: 720 },
+      xiaomian:       { name: "Chongqing xiaomian",       kcal: 250, c: 36,  p: 8,   f: 9,   fiber: 2,   sodium: 880 },
+      hotpot_beef:    { name: "Hotpot beef slice",        kcal: 232, c: 0.5, p: 19,  f: 17,  fiber: 0,   sodium: 380 },
+      bok_choy:       { name: "Bok choy, blanched",       kcal: 13,  c: 2.2, p: 1.5, f: 0.2, fiber: 1,   sodium: 65 },
+      dumplings:      { name: "Pork dumplings (steamed)", kcal: 240, c: 25,  p: 11,  f: 11,  fiber: 1.6, sodium: 460 },
+      caesar_salad:   { name: "Caesar salad w/ chicken",  kcal: 178, c: 6,   p: 13,  f: 12,  fiber: 1.5, sodium: 430 },
+      sourdough:      { name: "Sourdough bread",          kcal: 256, c: 51,  p: 9,   f: 1.5, fiber: 2.4, sodium: 580 },
+
+      apple:          { name: "Apple",                    kcal: 52,  c: 14,  p: 0.3, f: 0.2, fiber: 2.4, sodium: 1 },
+      dark_chocolate: { name: "Dark chocolate, 70%",      kcal: 598, c: 46,  p: 7.8, f: 43,  fiber: 11,  sodium: 24 },
+      milk_tea:       { name: "Bubble milk tea",          kcal: 90,  c: 17,  p: 1,   f: 2,   fiber: 0,   sodium: 30 },
+      beer:           { name: "Beer, lager",              kcal: 43,  c: 3.6, p: 0.5, f: 0,   fiber: 0,   sodium: 4 },
+    };
+
+    // ---------- Date helpers (shared by seeds) ----------
+    const today = new Date();
+    const day = (offset) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() + offset);
+      return d.toISOString().slice(0, 10);
+    };
+
+    // ---------- Profile + dynamic targets ----------
+    // Non-training daily activity (workouts logged separately and added on top).
+    const ACTIVITY = {
+      sedentary: { mult: 1.25, label: "Mostly sitting" },
+      light:     { mult: 1.35, label: "Some standing" },
+      active:    { mult: 1.45, label: "Active lifestyle" },
+    };
+    // Map old training-inclusive multipliers to the new non-training ones.
+    const LEGACY_ACTIVITY = { moderate: "light", high: "light", athlete: "active" };
+
+    const GOAL = {
+      cut:      { kcalDelta: -400, proteinPerKg: 2.2, label: "Cut" },
+      recomp:   { kcalDelta: -150, proteinPerKg: 2.0, label: "Recomp" },
+      maintain: { kcalDelta:    0, proteinPerKg: 1.8, label: "Maintain" },
+      bulk:     { kcalDelta: +250, proteinPerKg: 1.8, label: "Lean bulk" },
+    };
+
+    const FDA_TARGETS = {
+      kcal: { goal: 2000, unit: "kcal", label: "Calories" },
+      c:    { goal: 275,  unit: "g",    label: "Carbs"    },
+      p:    { goal: 50,   unit: "g",    label: "Protein"  },
+      f:    { goal: 78,   unit: "g",    label: "Fat"      },
+    };
+
+    function loadProfile() {
+      try {
+        const raw = localStorage.getItem("nutritionProfile");
+        if (!raw) return null;
+        const p = JSON.parse(raw);
+        if (p?.activity && !ACTIVITY[p.activity]) {
+          p.activity = LEGACY_ACTIVITY[p.activity] || "light";
+        }
+        return p;
+      } catch { return null; }
+    }
+    function saveProfile(p) { localStorage.setItem("nutritionProfile", JSON.stringify(p)); }
+    function clearProfile() { localStorage.removeItem("nutritionProfile"); }
+
+    function deriveTargets(p) {
+      if (!p) return null;
+      const { sex, age, height, weight, bodyFat, activity, goal } = p;
+      if (!sex || !age || !height || !weight || !activity || !goal) return null;
+
+      const bmr = (bodyFat && bodyFat > 0)
+        ? 370 + 21.6 * (weight * (1 - bodyFat / 100))             // Katch-McArdle
+        : 10 * weight + 6.25 * height - 5 * age + (sex === "male" ? 5 : -161); // Mifflin–St Jeor
+
+      const tdee = bmr * ACTIVITY[activity].mult;
+      const g = GOAL[goal];
+      const kcal = Math.round(tdee + g.kcalDelta);
+      const protein = Math.round(weight * g.proteinPerKg);
+      const fat = Math.max(Math.round(kcal * 0.25 / 9), Math.round(weight * 0.8));
+      const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+
+      return {
+        bmr: Math.round(bmr),
+        tdee: Math.round(tdee),
+        targets: {
+          kcal: { goal: kcal,    unit: "kcal", label: "Calories" },
+          c:    { goal: carbs,   unit: "g",    label: "Carbs"    },
+          p:    { goal: protein, unit: "g",    label: "Protein"  },
+          f:    { goal: fat,     unit: "g",    label: "Fat"      },
+        }
+      };
+    }
+
+    // PROFILE + DERIVED are populated by initRepo() at the bottom of the script.
+    let PROFILE;
+    let DERIVED;
+
+    // ---------- Workouts ----------
+    // MET values per Compendium of Physical Activities (Ainsworth et al.).
+    const WORKOUT_TYPES = {
+      bouldering: { label: "Bouldering",      met: 7.5, color: "#c33d2e" },
+      climbing:   { label: "Sport climbing",  met: 8.0, color: "#b64232" },
+      gym:        { label: "Strength (gym)",  met: 5.5, color: "#8f3a55" },
+      swimming:   { label: "Swimming",        met: 7.5, color: "#3c6fa7" },
+      running:    { label: "Running",         met: 9.0, color: "#d68a1f" },
+      cycling:    { label: "Cycling",         met: 7.0, color: "#347f72" },
+      hiit:       { label: "HIIT",            met: 9.0, color: "#b4382a" },
+      yoga:       { label: "Yoga / mobility", met: 3.0, color: "#7b746a" },
+      walking:    { label: "Brisk walking",   met: 4.0, color: "#71695d" },
+      other:      { label: "Other",           met: 5.0, color: "#71695d" },
+    };
+    const INTENSITY = {
+      light:    { mult: 0.8, label: "Light" },
+      moderate: { mult: 1.0, label: "Moderate" },
+      hard:     { mult: 1.2, label: "Hard" },
+    };
+
+    function workoutKcal(w, weight) {
+      if (!weight || !w?.min) return 0;
+      const t = WORKOUT_TYPES[w.type] || WORKOUT_TYPES.other;
+      const i = INTENSITY[w.intensity] || INTENSITY.moderate;
+      return Math.round(t.met * i.mult * weight * (w.min / 60));
+    }
+
+    function loadWorkouts() {
+      try {
+        const raw = localStorage.getItem("nutritionWorkouts");
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    }
+    function saveWorkouts(arr) { localStorage.setItem("nutritionWorkouts", JSON.stringify(arr)); }
+
+    function seedWorkouts() {
+      const id = (s) => "seed_" + s;
+      return [
+        { id: id("a"), date: day(-6), type: "gym",        min: 60, intensity: "hard",     seeded: true },
+        { id: id("b"), date: day(-4), type: "bouldering", min: 90, intensity: "moderate", seeded: true },
+        { id: id("c"), date: day(-3), type: "swimming",   min: 45, intensity: "moderate", seeded: true },
+        { id: id("d"), date: day(-2), type: "gym",        min: 60, intensity: "hard",     seeded: true },
+        { id: id("e"), date: day(-2), type: "bouldering", min: 60, intensity: "light",    seeded: true },
+        { id: id("f"), date: day(0),  type: "bouldering", min: 75, intensity: "moderate", seeded: true },
+      ];
+    }
+
+    let WORKOUTS;   // populated by initRepo()
+
+    function workoutsForDate(date) {
+      return WORKOUTS.filter(w => w.date === date);
+    }
+    function workoutKcalForDate(date) {
+      const w = PROFILE?.weight ?? 70;
+      return workoutsForDate(date).reduce((s, x) => s + workoutKcal(x, w), 0);
+    }
+
+    // Targets for a specific date = base (rest-day) targets + workout kcal added to carbs.
+    function targetsForDate(date) {
+      const burned = DERIVED ? workoutKcalForDate(date) : 0;
+      const base = DERIVED ? DERIVED.targets : FDA_TARGETS;
+      const baseKcal = base.kcal.goal;
+      const kcal = baseKcal + burned;
+      const protein = base.p.goal;
+      const fat = base.f.goal;
+      const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+      return {
+        burned,
+        baseKcal,
+        targets: {
+          kcal: { goal: kcal,    unit: "kcal", label: "Calories" },
+          c:    { goal: carbs,   unit: "g",    label: "Carbs"    },
+          p:    { goal: protein, unit: "g",    label: "Protein"  },
+          f:    { goal: fat,     unit: "g",    label: "Fat"      },
+        }
+      };
+    }
+
+    // ---------- Fake 7-day log ----------
+    // (date helpers `today` and `day` are declared earlier — they're shared by the workout + weight seeds.)
+    const LOG = [
+      { date: day(-6), entries: [
+        { meal: "Breakfast", food: "oatmeal", g: 250 },
+        { meal: "Breakfast", food: "banana",  g: 120 },
+        { meal: "Breakfast", food: "coffee_latte", g: 240 },
+        { meal: "Lunch",     food: "caesar_salad", g: 320 },
+        { meal: "Lunch",     food: "sourdough", g: 60 },
+        { meal: "Snack",     food: "almonds", g: 25 },
+        { meal: "Dinner",    food: "salmon", g: 180 },
+        { meal: "Dinner",    food: "brown_rice", g: 180 },
+        { meal: "Dinner",    food: "broccoli", g: 150 },
+      ]},
+      { date: day(-5), entries: [
+        { meal: "Breakfast", food: "greek_yogurt", g: 200 },
+        { meal: "Breakfast", food: "blueberries", g: 80 },
+        { meal: "Breakfast", food: "almonds", g: 15 },
+        { meal: "Lunch",     food: "kung_pao", g: 280 },
+        { meal: "Lunch",     food: "white_rice", g: 200 },
+        { meal: "Snack",     food: "apple", g: 180 },
+        { meal: "Dinner",    food: "mapo_tofu", g: 250 },
+        { meal: "Dinner",    food: "white_rice", g: 180 },
+        { meal: "Dinner",    food: "bok_choy", g: 150 },
+      ]},
+      { date: day(-4), entries: [
+        { meal: "Breakfast", food: "egg", g: 100 },
+        { meal: "Breakfast", food: "whole_wheat", g: 60 },
+        { meal: "Breakfast", food: "avocado", g: 60 },
+        { meal: "Lunch",     food: "dan_dan", g: 320 },
+        { meal: "Snack",     food: "milk_tea", g: 450 },
+        { meal: "Dinner",    food: "chicken_breast", g: 180 },
+        { meal: "Dinner",    food: "brown_rice", g: 200 },
+        { meal: "Dinner",    food: "broccoli", g: 180 },
+        { meal: "Dinner",    food: "olive_oil", g: 6 },
+      ]},
+      { date: day(-3), entries: [
+        { meal: "Breakfast", food: "oatmeal", g: 220 },
+        { meal: "Breakfast", food: "blueberries", g: 70 },
+        { meal: "Lunch",     food: "tofu", g: 150 },
+        { meal: "Lunch",     food: "brown_rice", g: 200 },
+        { meal: "Lunch",     food: "bok_choy", g: 150 },
+        { meal: "Snack",     food: "dark_chocolate", g: 20 },
+        { meal: "Dinner",    food: "xiaomian", g: 380 },
+      ]},
+      { date: day(-2), entries: [
+        { meal: "Breakfast", food: "egg", g: 100 },
+        { meal: "Breakfast", food: "whole_wheat", g: 50 },
+        { meal: "Breakfast", food: "coffee_latte", g: 240 },
+        { meal: "Lunch",     food: "dumplings", g: 220 },
+        { meal: "Lunch",     food: "bok_choy", g: 150 },
+        { meal: "Snack",     food: "apple", g: 180 },
+        { meal: "Dinner",    food: "hotpot_beef", g: 200 },
+        { meal: "Dinner",    food: "tofu", g: 120 },
+        { meal: "Dinner",    food: "bok_choy", g: 200 },
+        { meal: "Dinner",    food: "beer", g: 330 },
+      ]},
+      { date: day(-1), entries: [
+        { meal: "Breakfast", food: "greek_yogurt", g: 180 },
+        { meal: "Breakfast", food: "banana", g: 120 },
+        { meal: "Breakfast", food: "almonds", g: 20 },
+        { meal: "Lunch",     food: "chicken_breast", g: 160 },
+        { meal: "Lunch",     food: "sourdough", g: 80 },
+        { meal: "Lunch",     food: "caesar_salad", g: 200 },
+        { meal: "Snack",     food: "dark_chocolate", g: 15 },
+        { meal: "Dinner",    food: "salmon", g: 160 },
+        { meal: "Dinner",    food: "brown_rice", g: 180 },
+        { meal: "Dinner",    food: "broccoli", g: 180 },
+      ]},
+      { date: day(0), entries: [
+        { meal: "Breakfast", food: "oatmeal", g: 240 },
+        { meal: "Breakfast", food: "banana", g: 110 },
+        { meal: "Breakfast", food: "coffee_latte", g: 240 },
+        { meal: "Lunch",     food: "kung_pao", g: 260 },
+        { meal: "Lunch",     food: "white_rice", g: 200 },
+        { meal: "Snack",     food: "apple", g: 180 },
+        { meal: "Snack",     food: "almonds", g: 18 },
+        { meal: "Dinner",    food: "mapo_tofu", g: 220 },
+        { meal: "Dinner",    food: "brown_rice", g: 180 },
+        { meal: "Dinner",    food: "bok_choy", g: 150 },
+      ]},
+    ];
+
+    // ---------- Math helpers ----------
+    const NUTS = ["kcal", "c", "p", "f"];
+
+    function pickNuts(food) {
+      const o = {};
+      NUTS.forEach(n => o[n] = +(food[n] || 0));
+      return o;
+    }
+
+    // ---------- User meal log + deleted-seed tracking ----------
+    function loadUserMeals() {
+      try {
+        const raw = localStorage.getItem("nutritionUserMeals");
+        return raw ? JSON.parse(raw) : {};
+      } catch { return {}; }
+    }
+    function saveUserMeals() { localStorage.setItem("nutritionUserMeals", JSON.stringify(USER_MEAL_LOG)); }
+
+    function loadDeletedSeeds() {
+      try {
+        const raw = localStorage.getItem("nutritionDeletedSeeds");
+        return new Set(raw ? JSON.parse(raw) : []);
+      } catch { return new Set(); }
+    }
+    function saveDeletedSeeds() { localStorage.setItem("nutritionDeletedSeeds", JSON.stringify([...DELETED_SEEDS])); }
+
+    let USER_MEAL_LOG;   // { date -> [entry, ...] }, populated by initRepo()
+    let DELETED_SEEDS;   // Set of seed entry ids, populated by initRepo()
+
+    // Common entry shape: { id, meal, name, brand?, per100, g, seeded?, source?, fdcId? }
+    function entriesForDate(date) {
+      const user = USER_MEAL_LOG?.[date] || [];
+      // Authenticated users don't see demo seeds — their account starts empty.
+      if (repo && !repo.showDemo) return user;
+      const dayLog = LOG.find(d => d.date === date);
+      const seeded = dayLog
+        ? dayLog.entries.map((e, idx) => ({
+            id:    `seed:${date}:${idx}`,
+            meal:  e.meal,
+            name:  FOODS[e.food].name,
+            per100: pickNuts(FOODS[e.food]),
+            g:     e.g,
+            seeded: true,
+          }))
+        : [];
+      const liveSeeded = seeded.filter(e => !DELETED_SEEDS.has(e.id));
+      return [...liveSeeded, ...user];
+    }
+
+    function scaleEntry(e) {
+      const r = e.g / 100;
+      const o = { name: e.name, brand: e.brand || null, g: e.g };
+      NUTS.forEach(n => o[n] = +(e.per100[n] * r).toFixed(1));
+      return o;
+    }
+
+    // Accepts a LOG entry, a date string, or a {date} object.
+    function dayTotals(arg) {
+      const date = typeof arg === "string" ? arg : arg.date;
+      const sum = Object.fromEntries(NUTS.map(n => [n, 0]));
+      entriesForDate(date).forEach(e => {
+        const s = scaleEntry(e);
+        NUTS.forEach(n => sum[n] += s[n]);
+      });
+      NUTS.forEach(n => sum[n] = +sum[n].toFixed(1));
+      return sum;
+    }
+
+    function mealTotals(arg) {
+      const date = typeof arg === "string" ? arg : arg.date;
+      const groups = {};
+      entriesForDate(date).forEach(e => {
+        const s = scaleEntry(e);
+        if (!groups[e.meal]) groups[e.meal] = { items: [], kcal: 0 };
+        groups[e.meal].items.push({ ...s, id: e.id, seeded: !!e.seeded, source: e.source });
+        groups[e.meal].kcal += s.kcal;
+      });
+      Object.values(groups).forEach(g => g.kcal = +g.kcal.toFixed(0));
+      return groups;
+    }
+
+    // ---------- Rendering ----------
+    const $ = sel => document.querySelector(sel);
+    let activeIdx = LOG.length - 1;
+    let charts = {};
+
+    function fmtDate(iso) {
+      const d = new Date(iso + "T00:00:00");
+      return {
+        dow: d.toLocaleDateString("en-US", { weekday: "short" }),
+        dom: d.getDate(),
+        full: d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }),
+      };
+    }
+
+    function statusFor(key, val, goal) {
+      const ratio = val / goal;
+      if (key === "f") {
+        if (ratio > 1.15) return { tone: "warn", label: "Over" };
+        if (ratio > 0.9)  return { tone: "good", label: "On target" };
+        return { tone: "good", label: "Under" };
+      }
+      if (ratio < 0.7)  return { tone: "warn", label: "Low" };
+      if (ratio > 1.15) return { tone: "warn", label: "Over" };
+      return { tone: "good", label: "On track" };
+    }
+
+    function renderDayPicker() {
+      const el = $("#dayPicker");
+      el.innerHTML = "";
+      LOG.forEach((d, i) => {
+        const t = dayTotals(d);
+        const f = fmtDate(d.date);
+        const btn = document.createElement("button");
+        btn.className = "day" + (i === activeIdx ? " active" : "");
+        btn.innerHTML = `<div class="dow">${f.dow}</div><div class="dom">${f.dom}</div><div class="kcal">${Math.round(t.kcal)} kcal</div>`;
+        btn.addEventListener("click", () => { activeIdx = i; renderAll(); });
+        el.appendChild(btn);
+      });
+    }
+
+    function renderMeals() {
+      const el = $("#meals");
+      const date = LOG[activeIdx].date;
+      const groups = mealTotals(date);
+      const order = ["Breakfast", "Lunch", "Snack", "Dinner"];
+      el.innerHTML = "";
+
+      const addBtn = document.createElement("button");
+      addBtn.className = "btn primary add-food-btn";
+      addBtn.id = "addFoodBtn";
+      addBtn.textContent = "+ Add food";
+      el.appendChild(addBtn);
+      addBtn.addEventListener("click", () => openAddFoodModal(date));
+
+      const hasAnything = order.some(m => groups[m]?.items?.length);
+      if (!hasAnything) {
+        const empty = document.createElement("div");
+        empty.className = "training-empty";
+        empty.style.marginTop = "12px";
+        empty.textContent = "No food logged on this day yet. Click +Add food to search USDA.";
+        el.appendChild(empty);
+        return;
+      }
+
+      order.forEach(meal => {
+        if (!groups[meal]) return;
+        const g = groups[meal];
+        const wrap = document.createElement("div");
+        wrap.className = "meal-group";
+        wrap.innerHTML = `
+          <div class="meal-head"><span>${meal}</span><span class="meal-kcal">${g.kcal} kcal</span></div>
+          ${g.items.map(it => `
+            <div class="meal-item" data-id="${it.id}">
+              <div>
+                <div class="name">${it.name}${it.brand ? ` <span class="brand">${it.brand}</span>` : ""}${it.source === "usda" ? ' <span class="src">USDA</span>' : ""}</div>
+                <div class="qty">${it.g} g</div>
+              </div>
+              <div class="kcal-num">${Math.round(it.kcal)}</div>
+              <button class="entry-x" title="Remove" data-remove-entry="${it.id}">×</button>
+              <div class="macros">
+                <span>C <b>${it.c.toFixed(1)}g</b></span>
+                <span>P <b>${it.p.toFixed(1)}g</b></span>
+                <span>F <b>${it.f.toFixed(1)}g</b></span>
+              </div>
+            </div>
+          `).join("")}
+        `;
+        wrap.querySelectorAll("[data-remove-entry]").forEach(btn =>
+          btn.addEventListener("click", () => removeEntry(date, btn.dataset.removeEntry))
+        );
+        el.appendChild(wrap);
+      });
+    }
+
+    async function removeEntry(date, id) {
+      await repo.meals.remove(date, id, { seeded: id.startsWith("seed:") });
+      renderAll();
+    }
+
+    async function addUserMeal(date, entry) {
+      await repo.meals.add(date, entry);
+    }
+
+    function renderTargets() {
+      const el = $("#targets");
+      const t = dayTotals(LOG[activeIdx]);
+      const T = targetsForDate(LOG[activeIdx].date).targets;
+      el.innerHTML = "";
+      Object.keys(T).forEach(key => {
+        const meta = T[key];
+        const val = t[key];
+        const pct = Math.min(100, (val / meta.goal) * 100);
+        const s = statusFor(key, val, meta.goal);
+        const card = document.createElement("div");
+        card.className = "target";
+        card.innerHTML = `
+          <div class="row">
+            <span class="key">${meta.label}<span class="pill ${s.tone}">${s.label}</span></span>
+            <span class="val">${val.toFixed(0)}<span class="goal"> / ${meta.goal} ${meta.unit}</span></span>
+          </div>
+          <div class="bar"><i style="width:${pct}%; background:${barColor(key)}"></i></div>
+        `;
+        el.appendChild(card);
+      });
+    }
+
+    function barColor(key) {
+      return ({
+        kcal: "var(--brand)", c: "var(--carbs)", p: "var(--protein)", f: "var(--fat)"
+      })[key];
+    }
+
+    function destroy(name) { if (charts[name]) { charts[name].destroy(); delete charts[name]; } }
+
+    function renderRing() {
+      const t = dayTotals(LOG[activeIdx]);
+      const dayInfo = targetsForDate(LOG[activeIdx].date);
+      const goal = dayInfo.targets.kcal.goal;
+      const eaten = Math.min(t.kcal, goal);
+      const remaining = Math.max(0, goal - t.kcal);
+      const over = Math.max(0, t.kcal - goal);
+
+      $("#ringVal").textContent = Math.round(t.kcal);
+      $("#ringGoal").textContent = goal;
+      const diff = t.kcal - goal;
+      const f = fmtDate(LOG[activeIdx].date);
+      const burnTxt = dayInfo.burned > 0 ? ` · +${dayInfo.burned} kcal from training` : "";
+      $("#ringSub").textContent = `${f.full} · ${diff >= 0 ? "+" : ""}${Math.round(diff)} kcal vs. goal${burnTxt}`;
+
+      destroy("ring");
+      charts.ring = new Chart($("#ringChart"), {
+        type: "doughnut",
+        data: {
+          labels: over > 0 ? ["Eaten", "Over"] : ["Eaten", "Remaining"],
+          datasets: [{
+            data: over > 0 ? [eaten, over] : [eaten, remaining],
+            backgroundColor: over > 0
+              ? ["#c33d2e", "#b4382a"]
+              : ["#c33d2e", "#ece2ce"],
+            borderWidth: 0,
+            cutout: "72%",
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        }
+      });
+    }
+
+    function renderMacroChart() {
+      const t = dayTotals(LOG[activeIdx]);
+      const kcalC = t.c * 4, kcalP = t.p * 4, kcalF = t.f * 9;
+      const totalK = kcalC + kcalP + kcalF || 1;
+      const pct = [kcalC, kcalP, kcalF].map(v => Math.round(v / totalK * 100));
+      $("#macrosBig").innerHTML = `${pct[0]}<span class="unit">% C</span> · ${pct[1]}<span class="unit">% P</span> · ${pct[2]}<span class="unit">% F</span>`;
+
+      destroy("macro");
+      charts.macro = new Chart($("#macroChart"), {
+        type: "bar",
+        data: {
+          labels: ["Carbs", "Protein", "Fat"],
+          datasets: [{
+            data: [t.c, t.p, t.f],
+            backgroundColor: ["#d68a1f", "#347f72", "#8f3a55"],
+            borderRadius: 6,
+            barThickness: 36,
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.raw.toFixed(1)} g` } },
+          },
+          scales: {
+            x: { grid: { color: "#ece2ce" }, ticks: { color: "#71695d", callback: v => v + " g" } },
+            y: { grid: { display: false }, ticks: { color: "#24211d", font: { weight: "600" } } },
+          },
+        }
+      });
+    }
+
+    function renderTrend() {
+      const labels = LOG.map(d => fmtDate(d.date).dow);
+      const kcals = LOG.map(d => Math.round(dayTotals(d).kcal));
+      const avg = Math.round(kcals.reduce((a, b) => a + b, 0) / kcals.length);
+      const goals = LOG.map(d => targetsForDate(d.date).targets.kcal.goal);
+      const avgGoal = Math.round(goals.reduce((a, b) => a + b, 0) / goals.length);
+      $("#trendSub").textContent = `Average ${avg} kcal/day eaten · ${avgGoal} kcal/day target (rises on training days)`;
+
+      destroy("trend");
+      charts.trend = new Chart($("#trendChart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Calories",
+              data: kcals,
+              borderColor: "#c33d2e",
+              backgroundColor: "rgba(195,61,46,.12)",
+              fill: true,
+              tension: 0.35,
+              pointRadius: 5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: kcals.map((_, i) => i === activeIdx ? "#24211d" : "#c33d2e"),
+              pointBorderColor: "#fffdf9",
+              pointBorderWidth: 2,
+            },
+            {
+              label: "Goal",
+              data: goals,
+              borderColor: "#b8a98a",
+              borderDash: [6, 6],
+              pointRadius: 0,
+              fill: false,
+              tension: 0.2,
+              stepped: false,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw} kcal` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#24211d", font: { weight: "600" } } },
+            y: { grid: { color: "#ece2ce" }, ticks: { color: "#71695d" }, beginAtZero: false },
+          },
+          onClick: (_evt, els) => {
+            if (els.length) { activeIdx = els[0].index; renderAll(); }
+          }
+        }
+      });
+    }
+
+    function renderStack() {
+      const labels = LOG.map(d => fmtDate(d.date).dow);
+      const carbs = LOG.map(d => +dayTotals(d).c.toFixed(0));
+      const prot  = LOG.map(d => +dayTotals(d).p.toFixed(0));
+      const fat   = LOG.map(d => +dayTotals(d).f.toFixed(0));
+
+      destroy("stack");
+      charts.stack = new Chart($("#stackChart"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "Carbs",   data: carbs, backgroundColor: "#d68a1f", borderRadius: 4 },
+            { label: "Protein", data: prot,  backgroundColor: "#347f72", borderRadius: 4 },
+            { label: "Fat",     data: fat,   backgroundColor: "#8f3a55", borderRadius: 4 },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "bottom", labels: { color: "#24211d", boxWidth: 12 } },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw} g` } },
+          },
+          scales: {
+            x: { stacked: true, grid: { display: false }, ticks: { color: "#24211d" } },
+            y: { stacked: true, grid: { color: "#ece2ce" }, ticks: { color: "#71695d", callback: v => v + "g" } },
+          },
+        }
+      });
+    }
+
+    function renderProfileBar() {
+      const el = $("#profileWho");
+      const btn = $("#openProfile");
+      const sub = $("#targetsSub");
+      if (DERIVED && PROFILE) {
+        const a = ACTIVITY[PROFILE.activity].label;
+        const g = GOAL[PROFILE.goal].label;
+        const todayInfo = targetsForDate(day(0));
+        const burnTxt = todayInfo.burned > 0 ? ` <span class="muted">(+${todayInfo.burned} training)</span>` : "";
+        el.innerHTML =
+          `<b>${g}</b> · <span class="muted">${PROFILE.weight} kg · ${a} · BMR ${DERIVED.bmr} · Rest-day TDEE ${DERIVED.tdee}</span><br>` +
+          `Today <b>${todayInfo.targets.kcal.goal} kcal</b>${burnTxt} <span class="muted">·</span> <b>${DERIVED.targets.p.goal} g protein</b>`;
+        btn.textContent = "Edit";
+        sub.innerHTML = `Personalized from your profile (${g}, ${a}). <button class="link-btn" id="openProfile2">Edit profile</button>`;
+        rebindOpen2();
+      } else {
+        el.textContent = "No profile yet — using FDA defaults (2,000 kcal, 50 g protein). Set one up for personalized targets.";
+        btn.textContent = "Set up";
+        sub.innerHTML = `Reference values from FDA Daily Values for a 2,000 kcal diet. <button class="link-btn" id="openProfile2">Set up your profile</button> for personalized targets.`;
+        rebindOpen2();
+      }
+    }
+
+    function rebindOpen2() {
+      const b = document.getElementById("openProfile2");
+      if (b) b.addEventListener("click", openModal);
+    }
+
+    // ---------- Modal + form wiring ----------
+    const modal = $("#profileModal");
+    const form  = $("#profileForm");
+
+    function openModal() {
+      if (PROFILE) {
+        Object.entries(PROFILE).forEach(([k, v]) => {
+          if (form.elements[k]) form.elements[k].value = v ?? "";
+        });
+      }
+      updatePreview();
+      modal.hidden = false;
+    }
+    function closeModal() { modal.hidden = true; }
+
+    function readForm() {
+      const fd = new FormData(form);
+      const num = k => {
+        const v = fd.get(k);
+        return v === "" || v == null ? null : Number(v);
+      };
+      return {
+        sex:      fd.get("sex") || null,
+        age:      num("age"),
+        height:   num("height"),
+        weight:   num("weight"),
+        bodyFat:  num("bodyFat"),
+        activity: fd.get("activity") || null,
+        goal:     fd.get("goal") || null,
+      };
+    }
+
+    function updatePreview() {
+      const p = readForm();
+      const d = deriveTargets(p);
+      const set = (id, v) => { document.getElementById(id).textContent = v; };
+      if (!d) { set("prevBmr","—"); set("prevTdee","—"); set("prevKcal","—"); set("prevProt","—"); return; }
+      set("prevBmr",  d.bmr + " kcal");
+      set("prevTdee", d.tdee + " kcal");
+      set("prevKcal", d.targets.kcal.goal + " kcal");
+      set("prevProt", d.targets.p.goal + " g");
+    }
+
+    $("#openProfile").addEventListener("click", openModal);
+    $("#closeProfile").addEventListener("click", closeModal);
+    document.querySelector("[data-close]").addEventListener("click", closeModal);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
+
+    form.addEventListener("input", updatePreview);
+    form.addEventListener("change", updatePreview);
+
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      const p = readForm();
+      const d = deriveTargets(p);
+      if (!d) return;
+      PROFILE = p;
+      DERIVED = d;
+      await repo.profile.save(p);
+      closeModal();
+      renderAll();
+    });
+
+    $("#clearProfile").addEventListener("click", async () => {
+      await repo.profile.clear();
+      PROFILE = null;
+      DERIVED = null;
+      form.reset();
+      updatePreview();
+      closeModal();
+      renderAll();
+    });
+
+    // ---------- Body composition ----------
+    function loadWeightLog() {
+      try {
+        const raw = localStorage.getItem("nutritionWeightLog");
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    }
+    function saveWeightLog(log) { localStorage.setItem("nutritionWeightLog", JSON.stringify(log)); }
+
+    function seedWeightLog() {
+      const startW = 72.6, endW = 71.0;
+      const startBF = 19.2, endBF = 17.6;
+      const log = [];
+      for (let i = 29; i >= 0; i--) {
+        const t = (29 - i) / 29;
+        const baseW = startW + (endW - startW) * t;
+        const noise = Math.sin(i * 1.7) * 0.35 + Math.cos(i * 0.9) * 0.22;
+        const weight = +(baseW + noise).toFixed(1);
+        const entry = { date: day(-i), weight, seeded: true };
+        // Body fat measured ~weekly (and today)
+        if (i === 28 || i === 21 || i === 14 || i === 7 || i === 0) {
+          entry.bodyFat = +(startBF + (endBF - startBF) * t).toFixed(1);
+        }
+        log.push(entry);
+      }
+      // Skip a few days to look realistic (people miss weigh-ins)
+      const skip = new Set([day(-25), day(-17), day(-9)]);
+      return log.filter(e => !skip.has(e.date));
+    }
+
+    let WEIGHT_LOG;   // populated by initRepo()
+
+    function rollingAvg(values, window = 7) {
+      return values.map((_, i) => {
+        const slice = values.slice(Math.max(0, i - window + 1), i + 1).filter(v => v != null);
+        return slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
+      });
+    }
+
+    function weightStats() {
+      const sorted = [...WEIGHT_LOG].sort((a, b) => a.date.localeCompare(b.date));
+      const latest = sorted[sorted.length - 1] || null;
+      const weights = sorted.map(e => e.weight);
+      const avgs = rollingAvg(weights);
+      const avgNow = avgs[avgs.length - 1];
+      const avg7Ago = avgs.length > 7 ? avgs[avgs.length - 8] : null;
+
+      const bfEntries = sorted.filter(e => e.bodyFat != null);
+      const bfNow = bfEntries[bfEntries.length - 1]?.bodyFat ?? null;
+      const bfPrev = bfEntries.length > 1 ? bfEntries[bfEntries.length - 2].bodyFat : null;
+
+      return {
+        latest, avgNow,
+        weightDelta: avg7Ago != null && avgNow != null ? avgNow - avg7Ago : null,
+        bfNow,
+        bfDelta: bfPrev != null && bfNow != null ? bfNow - bfPrev : null,
+      };
+    }
+
+    function trendSpan(delta, unit, goalDir) {
+      // goalDir: "down" means lower is good (weight/bf for cut/recomp)
+      if (delta == null) return "";
+      const abs = Math.abs(delta);
+      const arrow = delta < -0.01 ? "▾" : delta > 0.01 ? "▴" : "→";
+      let cls = "flat";
+      if (Math.abs(delta) > 0.01) {
+        const isGood = goalDir === "down" ? delta < 0 : delta > 0;
+        cls = isGood ? "down" : "up";
+      }
+      return `<span class="trend ${cls}">${arrow} ${abs.toFixed(unit === "kg" ? 2 : 1)} ${unit}</span>`;
+    }
+
+    function renderBodyCompStats() {
+      const s = weightStats();
+      const wEl = $("#bcWeight"), wDelta = $("#bcWeightDelta");
+      const bEl = $("#bcBf"),     bDelta = $("#bcBfDelta");
+
+      if (s.latest?.weight != null) {
+        wEl.innerHTML = `${s.latest.weight.toFixed(1)} <span class="unit">kg</span>`;
+        const avgTxt = s.avgNow != null ? `7-day avg ${s.avgNow.toFixed(1)} kg` : "";
+        const deltaTxt = s.weightDelta != null ? ` · ${trendSpan(s.weightDelta, "kg", "down")} vs. last week` : "";
+        wDelta.innerHTML = avgTxt + deltaTxt;
+      } else {
+        wEl.textContent = "—";
+        wDelta.textContent = "Log a weight to start tracking.";
+      }
+
+      if (s.bfNow != null) {
+        bEl.innerHTML = `${s.bfNow.toFixed(1)} <span class="unit">%</span>`;
+        bDelta.innerHTML = s.bfDelta != null
+          ? `${trendSpan(s.bfDelta, "%", "down")} vs. last reading`
+          : "Single reading — measure again to see a trend.";
+      } else {
+        bEl.textContent = "—";
+        bDelta.textContent = "Optional. Smart scale, calipers, or DEXA.";
+      }
+    }
+
+    function renderWeightChart() {
+      const sorted = [...WEIGHT_LOG].sort((a, b) => a.date.localeCompare(b.date));
+      const labels = sorted.map(e => {
+        const d = new Date(e.date + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      });
+      const weights = sorted.map(e => e.weight);
+      const avg = rollingAvg(weights);
+
+      destroy("weight");
+      charts.weight = new Chart($("#weightChart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Daily",
+              data: weights,
+              borderColor: "rgba(195,61,46,.35)",
+              backgroundColor: "rgba(195,61,46,.10)",
+              pointBackgroundColor: "#c33d2e",
+              pointBorderColor: "#fffdf9",
+              pointBorderWidth: 1,
+              pointRadius: 2.5,
+              pointHoverRadius: 5,
+              tension: 0.25,
+              borderWidth: 1.5,
+              fill: false,
+            },
+            {
+              label: "7-day avg",
+              data: avg,
+              borderColor: "#c33d2e",
+              backgroundColor: "transparent",
+              pointRadius: 0,
+              tension: 0.35,
+              borderWidth: 2.5,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw == null ? "—" : c.raw.toFixed(1)} kg` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#71695d", maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+            y: { grid: { color: "#ece2ce" }, ticks: { color: "#71695d", callback: v => v + " kg" } },
+          }
+        }
+      });
+    }
+
+    function renderBfChart() {
+      const sorted = [...WEIGHT_LOG].sort((a, b) => a.date.localeCompare(b.date));
+      const labels = sorted.map(e => {
+        const d = new Date(e.date + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      });
+      const bfData = sorted.map(e => e.bodyFat ?? null);
+
+      destroy("bf");
+      charts.bf = new Chart($("#bfChart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Body fat",
+            data: bfData,
+            borderColor: "#8f3a55",
+            backgroundColor: "rgba(143,58,85,.10)",
+            pointBackgroundColor: "#8f3a55",
+            pointBorderColor: "#fffdf9",
+            pointBorderWidth: 1.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.25,
+            borderWidth: 2,
+            spanGaps: true,
+            fill: false,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => c.raw == null ? null : `${c.raw.toFixed(1)} %` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#71695d", maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+            y: { grid: { color: "#ece2ce" }, ticks: { color: "#71695d", callback: v => v + " %" } },
+          }
+        }
+      });
+    }
+
+    function renderBodyComp() {
+      renderBodyCompStats();
+      renderWeightChart();
+      renderBfChart();
+    }
+
+    async function upsertWeightEntry(entry) {
+      await repo.weight.upsert(entry);
+      // If logging today, sync profile so TDEE recalcs.
+      if (entry.date === day(0) && PROFILE) {
+        PROFILE.weight = entry.weight;
+        if (entry.bodyFat != null) PROFILE.bodyFat = entry.bodyFat;
+        await repo.profile.save(PROFILE);
+        DERIVED = deriveTargets(PROFILE);
+      }
+    }
+
+    // ---------- Weight modal wiring ----------
+    const weightModal = $("#weightModal");
+    const weightForm  = $("#weightForm");
+
+    function openWeightModal() {
+      const todayStr = day(0);
+      const latest = [...WEIGHT_LOG].sort((a, b) => a.date.localeCompare(b.date)).pop();
+      weightForm.elements.date.value = todayStr;
+      weightForm.elements.weight.value = latest?.weight ?? "";
+      weightForm.elements.bodyFat.value = "";
+      weightModal.hidden = false;
+    }
+    function closeWeightModal() { weightModal.hidden = true; }
+
+    $("#logWeightBtn").addEventListener("click", openWeightModal);
+    $("#closeWeight").addEventListener("click", closeWeightModal);
+    document.querySelector("[data-close-weight]").addEventListener("click", closeWeightModal);
+
+    weightForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      const fd = new FormData(weightForm);
+      const date = fd.get("date");
+      const weight = Number(fd.get("weight"));
+      const bf = fd.get("bodyFat");
+      if (!date || !weight) return;
+      const entry = { date, weight };
+      if (bf !== "" && bf != null) entry.bodyFat = Number(bf);
+      await upsertWeightEntry(entry);
+      closeWeightModal();
+      renderAll();
+    });
+
+    // ---------- Training card ----------
+    function renderTraining() {
+      const date = LOG[activeIdx].date;
+      const workouts = workoutsForDate(date);
+      const dayInfo = targetsForDate(date);
+      const weight = PROFILE?.weight ?? 70;
+
+      $("#tBurn").innerHTML = `${dayInfo.burned} <span class="unit">kcal</span>`;
+      $("#tBurnSub").textContent = workouts.length === 0
+        ? "No sessions logged."
+        : `${workouts.length} session${workouts.length > 1 ? "s" : ""} on ${fmtDate(date).full}`;
+
+      if (DERIVED) {
+        $("#tTarget").innerHTML = `${dayInfo.targets.kcal.goal} <span class="unit">kcal</span>`;
+        $("#tTargetSub").innerHTML = dayInfo.burned > 0
+          ? `Rest-day ${dayInfo.baseKcal} + <b>${dayInfo.burned} training</b>`
+          : `Rest-day target (no training adjustment)`;
+      } else {
+        $("#tTarget").textContent = "—";
+        $("#tTargetSub").textContent = "Set up your profile for an adjusted target.";
+      }
+
+      const list = $("#trainingList");
+      list.innerHTML = "";
+      if (workouts.length === 0) {
+        list.innerHTML = `<div class="training-empty">No workouts on this day. ${PROFILE ? "Click +Log workout to add one." : "Set up your profile first so we can estimate burn."}</div>`;
+      } else {
+        workouts.forEach(w => {
+          const t = WORKOUT_TYPES[w.type] || WORKOUT_TYPES.other;
+          const i = INTENSITY[w.intensity] || INTENSITY.moderate;
+          const k = workoutKcal(w, weight);
+          const row = document.createElement("div");
+          row.className = "workout-item";
+          row.innerHTML = `
+            <span class="dot" style="background:${t.color}"></span>
+            <div>
+              <div class="title">${t.label}</div>
+              <div class="meta">${w.min} min · ${i.label}</div>
+            </div>
+            <div class="burn">${k} kcal</div>
+            <button class="remove" title="Remove" data-id="${w.id}">×</button>
+          `;
+          row.querySelector(".remove").addEventListener("click", () => removeWorkout(w.id));
+          list.appendChild(row);
+        });
+      }
+
+      // Weekly burn mini-chart (across the 7 LOG days)
+      const labels = LOG.map(d => fmtDate(d.date).dow);
+      const burns = LOG.map(d => workoutKcalForDate(d.date));
+      const colors = LOG.map((_, i) => i === activeIdx ? "#c33d2e" : "#e0a097");
+
+      destroy("training");
+      charts.training = new Chart($("#trainingChart"), {
+        type: "bar",
+        data: { labels, datasets: [{ data: burns, backgroundColor: colors, borderRadius: 4, barThickness: 28 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.raw} kcal` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#24211d", font: { weight: "600" } } },
+            y: { grid: { color: "#ece2ce" }, ticks: { color: "#71695d", callback: v => v + " kcal" }, beginAtZero: true },
+          },
+          onClick: (_e, els) => { if (els.length) { activeIdx = els[0].index; renderAll(); } },
+        }
+      });
+    }
+
+    async function removeWorkout(id) {
+      await repo.workouts.remove(id);
+      renderAll();
+    }
+
+    async function upsertWorkout(entry) {
+      await repo.workouts.add(entry);
+    }
+
+    // ---------- Workout modal wiring ----------
+    const workoutModal = $("#workoutModal");
+    const workoutForm  = $("#workoutForm");
+
+    function openWorkoutModal() {
+      workoutForm.elements.date.value = LOG[activeIdx].date;
+      workoutForm.elements.type.value = "bouldering";
+      workoutForm.elements.min.value = 60;
+      workoutForm.elements.intensity.value = "moderate";
+      updateWorkoutPreview();
+      workoutModal.hidden = false;
+    }
+    function closeWorkoutModal() { workoutModal.hidden = true; }
+
+    function updateWorkoutPreview() {
+      const fd = new FormData(workoutForm);
+      const w = {
+        type:      fd.get("type"),
+        min:       Number(fd.get("min")),
+        intensity: fd.get("intensity"),
+      };
+      const date = fd.get("date");
+      const weight = PROFILE?.weight ?? 70;
+      const burn = workoutKcal(w, weight);
+      $("#prevBurn").textContent = burn + " kcal";
+      if (DERIVED && date) {
+        const existing = workoutKcalForDate(date);
+        const projected = DERIVED.targets.kcal.goal + existing + burn;
+        $("#prevDayTarget").textContent = projected + " kcal";
+      } else {
+        $("#prevDayTarget").textContent = "— (set profile)";
+      }
+    }
+
+    $("#logWorkoutBtn").addEventListener("click", openWorkoutModal);
+    $("#closeWorkout").addEventListener("click", closeWorkoutModal);
+    document.querySelector("[data-close-workout]").addEventListener("click", closeWorkoutModal);
+    workoutForm.addEventListener("input",  updateWorkoutPreview);
+    workoutForm.addEventListener("change", updateWorkoutPreview);
+
+    workoutForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      const fd = new FormData(workoutForm);
+      const date = fd.get("date");
+      const type = fd.get("type");
+      const min = Number(fd.get("min"));
+      const intensity = fd.get("intensity");
+      if (!date || !type || !min) return;
+      const id = (crypto?.randomUUID?.() ?? ("w_" + Date.now() + "_" + Math.random().toString(36).slice(2,8)));
+      await upsertWorkout({ id, date, type, min, intensity });
+      closeWorkoutModal();
+      // If the workout is on a day in our log, switch view to it
+      const idx = LOG.findIndex(d => d.date === date);
+      if (idx >= 0) activeIdx = idx;
+      renderAll();
+    });
+
+    // ---------- USDA FoodData Central client ----------
+    const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
+    const USDA_DATA_TYPES = "Foundation,SR Legacy,Branded";
+
+    function getUsdaKey() {
+      return localStorage.getItem("nutritionUsdaKey") || "DEMO_KEY";
+    }
+    function setUsdaKey(k) {
+      if (k && k.trim() && k.trim() !== "DEMO_KEY") {
+        localStorage.setItem("nutritionUsdaKey", k.trim());
+      } else {
+        localStorage.removeItem("nutritionUsdaKey");
+      }
+    }
+
+    function usdaCacheGet(query) {
+      try {
+        const c = JSON.parse(localStorage.getItem("nutritionUsdaCache") || "{}");
+        return c[query] || null;
+      } catch { return null; }
+    }
+    function usdaCacheSet(query, foods) {
+      try {
+        const c = JSON.parse(localStorage.getItem("nutritionUsdaCache") || "{}");
+        c[query] = foods;
+        // Cap to ~30 most recent queries to keep localStorage modest
+        const keys = Object.keys(c);
+        if (keys.length > 30) {
+          const drop = keys.slice(0, keys.length - 30);
+          drop.forEach(k => delete c[k]);
+        }
+        localStorage.setItem("nutritionUsdaCache", JSON.stringify(c));
+      } catch {}
+    }
+
+    function parseUsdaFood(f) {
+      const nMap = {};
+      (f.foodNutrients || []).forEach(n => {
+        const id = n.nutrientId ?? n.nutrient?.id;
+        if (id != null) nMap[id] = n.value ?? n.amount;
+      });
+      const KCAL = 1008, PROT = 1003, FAT = 1004, CARB = 1005, KJ = 1062;
+      let kcal = nMap[KCAL];
+      if (kcal == null && nMap[KJ] != null) kcal = +(nMap[KJ] * 0.239).toFixed(0);
+      return {
+        fdcId: f.fdcId,
+        name: f.description || "Unnamed food",
+        brand: f.brandName || f.brandOwner || null,
+        dataType: f.dataType,
+        per100: {
+          kcal: +(kcal ?? 0).toFixed(0),
+          c:    +((nMap[CARB] ?? 0)).toFixed(1),
+          p:    +((nMap[PROT] ?? 0)).toFixed(1),
+          f:    +((nMap[FAT]  ?? 0)).toFixed(1),
+        }
+      };
+    }
+
+    async function searchUsda(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      const cached = usdaCacheGet(q);
+      if (cached) return cached;
+      const key = getUsdaKey();
+      const url = `${USDA_BASE}/foods/search?api_key=${encodeURIComponent(key)}` +
+                  `&query=${encodeURIComponent(q)}` +
+                  `&pageSize=25` +
+                  `&dataType=${encodeURIComponent(USDA_DATA_TYPES)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const txt = await res.text();
+        const err = new Error(`USDA ${res.status}: ${txt.slice(0, 120)}`);
+        err.status = res.status;
+        throw err;
+      }
+      const data = await res.json();
+      const foods = (data.foods || [])
+        .map(parseUsdaFood)
+        .filter(f => f.per100.kcal > 0); // skip entries without energy data
+      usdaCacheSet(q, foods);
+      return foods;
+    }
+
+    // ---------- Add-food modal wiring ----------
+    const addFoodModal = $("#addFoodModal");
+    const addFoodForm  = $("#addFoodForm");
+    let pickedFood = null;
+
+    function refreshKeyStatus() {
+      const k = localStorage.getItem("nutritionUsdaKey");
+      $("#keyStatus").textContent = k ? "(using your key)" : "(DEMO_KEY)";
+      $("#keyStatus").style.color = k ? "var(--good)" : "var(--muted)";
+      const inp = $("#usdaKeyInput");
+      if (k && !inp.value) inp.value = k;
+    }
+
+    function openAddFoodModal(date) {
+      addFoodForm.reset();
+      addFoodForm.elements.date.value = date || day(0);
+      addFoodForm.elements.meal.value = "Breakfast";
+      addFoodForm.elements.q.value = "";
+      $("#searchResults").innerHTML = "";
+      $("#searchStatus").textContent = "Type a food and hit Search. Values are per 100 g.";
+      $("#searchStatus").classList.remove("err");
+      $("#pickedWrap").hidden = true;
+      $("#addEntryBtn").disabled = true;
+      pickedFood = null;
+      refreshKeyStatus();
+      addFoodModal.hidden = false;
+      setTimeout(() => addFoodForm.elements.q.focus(), 30);
+    }
+    function closeAddFoodModal() { addFoodModal.hidden = true; }
+
+    $("#closeAddFood").addEventListener("click", closeAddFoodModal);
+    document.querySelector("[data-close-food]").addEventListener("click", closeAddFoodModal);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !addFoodModal.hidden) closeAddFoodModal(); });
+
+    $("#saveKeyBtn").addEventListener("click", () => {
+      setUsdaKey($("#usdaKeyInput").value);
+      refreshKeyStatus();
+    });
+
+    async function runSearch() {
+      const q = addFoodForm.elements.q.value.trim();
+      if (!q) return;
+      const status = $("#searchStatus");
+      const out = $("#searchResults");
+      status.classList.remove("err");
+      status.textContent = "Searching USDA…";
+      out.innerHTML = "";
+      try {
+        const foods = await repo.usda.search(q);
+        if (foods.length === 0) {
+          status.textContent = `No usable results for "${q}".`;
+          return;
+        }
+        status.textContent = `${foods.length} result${foods.length > 1 ? "s" : ""} · click to pick`;
+        foods.forEach(f => {
+          const row = document.createElement("div");
+          row.className = "result";
+          row.innerHTML = `
+            <div>
+              <div class="rname">${f.name}${f.brand ? ` <span style="color:var(--muted)">· ${f.brand}</span>` : ""}</div>
+              <div class="rmeta">${f.dataType}${f.brand ? " · branded" : ""}</div>
+              <div class="rmacro">C <b>${f.per100.c}g</b> · P <b>${f.per100.p}g</b> · F <b>${f.per100.f}g</b> <span style="color:var(--muted)">per 100g</span></div>
+            </div>
+            <div class="rkcal">${f.per100.kcal}<div style="font-size:10px;color:var(--muted);font-weight:500;text-align:right">kcal/100g</div></div>
+          `;
+          row.addEventListener("click", () => pickFood(f, row));
+          out.appendChild(row);
+        });
+      } catch (err) {
+        status.classList.add("err");
+        if (err.status === 403 || err.status === 429) {
+          status.textContent = `USDA rate-limited (${err.status}). Use your own free key — see "USDA API key" below.`;
+        } else {
+          status.textContent = `Search failed: ${err.message}`;
+        }
+      }
+    }
+
+    $("#searchBtn").addEventListener("click", runSearch);
+    addFoodForm.elements.q.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+    });
+
+    function pickFood(f, rowEl) {
+      pickedFood = f;
+      $("#searchResults").querySelectorAll(".result.selected").forEach(r => r.classList.remove("selected"));
+      rowEl?.classList.add("selected");
+      const card = $("#pickedCard");
+      card.innerHTML = `
+        <div class="pname">${f.name}</div>
+        <div class="pmeta">${f.dataType}${f.brand ? " · " + f.brand : ""} · FDC ID ${f.fdcId}</div>
+        <div class="pnuts">
+          <div><span>kcal</span><b>${f.per100.kcal}</b></div>
+          <div><span>Carbs</span><b>${f.per100.c} g</b></div>
+          <div><span>Protein</span><b>${f.per100.p} g</b></div>
+          <div><span>Fat</span><b>${f.per100.f} g</b></div>
+        </div>
+      `;
+      $("#pickedWrap").hidden = false;
+      $("#addEntryBtn").disabled = false;
+      updateEntryKcal();
+    }
+
+    function updateEntryKcal() {
+      if (!pickedFood) return;
+      const g = Number(addFoodForm.elements.g.value) || 0;
+      const k = Math.round(pickedFood.per100.kcal * g / 100);
+      $("#entryKcal").value = `${k} kcal`;
+    }
+    addFoodForm.elements.g.addEventListener("input", updateEntryKcal);
+
+    addFoodForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      if (!pickedFood) return;
+      const fd = new FormData(addFoodForm);
+      const date = fd.get("date");
+      const meal = fd.get("meal");
+      const g = Number(fd.get("g"));
+      if (!date || !meal || !g) return;
+      // Plain UUID — must match the meal_entries.id uuid column. Anything that
+      // doesn't start with "seed:" is treated as a user entry, so no prefix needed.
+      const id = (crypto?.randomUUID?.() ?? ("u_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8)));
+      await addUserMeal(date, {
+        id, meal, g,
+        name: pickedFood.name,
+        brand: pickedFood.brand,
+        per100: pickedFood.per100,
+        source: "usda",
+        fdcId: pickedFood.fdcId,
+      });
+      closeAddFoodModal();
+      const idx = LOG.findIndex(d => d.date === date);
+      if (idx >= 0) activeIdx = idx;
+      renderAll();
+    });
+
+    // ---------- Weekly review ----------
+    const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    function reviewRangeStr() {
+      const a = new Date(LOG[0].date + "T00:00:00");
+      const b = new Date(LOG[LOG.length - 1].date + "T00:00:00");
+      if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) {
+        return `${MONTHS_SHORT[a.getMonth()]} ${a.getDate()} – ${b.getDate()}, ${b.getFullYear()} · 7 days`;
+      }
+      return `${MONTHS_SHORT[a.getMonth()]} ${a.getDate()} – ${MONTHS_SHORT[b.getMonth()]} ${b.getDate()}, ${b.getFullYear()} · 7 days`;
+    }
+
+    function weeklyReview() {
+      const days = LOG.map(d => {
+        const eaten = dayTotals(d.date);
+        const targets = targetsForDate(d.date).targets;
+        const training = workoutKcalForDate(d.date);
+        const diff = +(eaten.kcal - targets.kcal.goal).toFixed(0);
+        const adhereKcal = Math.abs(diff) <= 200;       // within ±200 kcal of goal
+        const hitProtein = eaten.p >= targets.p.goal * 0.95;
+        return { ...d, eaten, targets, training, diff, adhereKcal, hitProtein };
+      });
+
+      const n = days.length;
+      const sum = (k, picker) => days.reduce((s, d) => s + picker(d), 0);
+      const avgEaten   = sum(0, d => d.eaten.kcal) / n;
+      const avgTarget  = sum(0, d => d.targets.kcal.goal) / n;
+      const avgDiff    = avgEaten - avgTarget;
+      const avgProtein = sum(0, d => d.eaten.p) / n;
+      const avgProteinGoal = sum(0, d => d.targets.p.goal) / n;
+      const proteinHits = days.filter(d => d.hitProtein).length;
+      const kcalHits = days.filter(d => d.adhereKcal).length;
+      const trainingDays = days.filter(d => d.training > 0).length;
+      const burnedTotal = days.reduce((s, d) => s + d.training, 0);
+
+      const weeklyBalance = avgDiff * 7;
+      const predictedKg = weeklyBalance / 7700;   // ~7,700 kcal per kg body fat
+
+      const best = [...days].sort((a, b) => Math.abs(a.diff) - Math.abs(b.diff))[0];
+      const heaviestTraining = [...days].sort((a, b) => b.training - a.training)[0];
+
+      const ws = weightStats();
+
+      return {
+        days, n, avgEaten, avgTarget, avgDiff,
+        avgProtein, avgProteinGoal,
+        proteinHits, kcalHits,
+        trainingDays, burnedTotal,
+        weeklyBalance, predictedKg,
+        best, heaviestTraining,
+        weightAvgNow: ws.avgNow, weightDelta: ws.weightDelta,
+        bfNow: ws.bfNow, bfDelta: ws.bfDelta,
+      };
+    }
+
+    function reviewInsights(r) {
+      const out = [];
+      const goalLabel = PROFILE ? GOAL[PROFILE.goal].label.toLowerCase() : null;
+
+      // 1. Energy balance + predicted change
+      if (Math.abs(r.avgDiff) < 80) {
+        out.push(`Energy balance: averaged within <b>${Math.round(Math.abs(r.avgDiff))} kcal</b> of target — dialed in.`);
+      } else if (r.avgDiff < 0) {
+        out.push(`Averaged <b>${Math.round(Math.abs(r.avgDiff))} kcal/day deficit</b>. Weekly total ~${Math.round(Math.abs(r.weeklyBalance))} kcal → predicted <b>~${Math.abs(r.predictedKg).toFixed(2)} kg fat loss</b> if sustained.`);
+      } else {
+        out.push(`Averaged <b>+${Math.round(r.avgDiff)} kcal/day surplus</b>. Weekly total ~${Math.round(r.weeklyBalance)} kcal → predicted <b>~${r.predictedKg.toFixed(2)} kg gain</b> if sustained (mix of muscle + fat depending on training).`);
+      }
+
+      // 2. Compare predicted vs measured weight change
+      if (r.weightDelta != null && Math.abs(r.weeklyBalance) > 500) {
+        const pred = r.predictedKg;
+        const actual = r.weightDelta;
+        const close = Math.abs(pred - actual) < 0.3;
+        if (close) {
+          out.push(`Measured weight change (<b>${actual >= 0 ? "+" : ""}${actual.toFixed(2)} kg</b>) matches the prediction — your TDEE estimate is well-calibrated.`);
+        } else if ((pred < 0 && actual > 0) || (pred > 0 && actual < 0)) {
+          out.push(`Predicted ${pred >= 0 ? "+" : ""}${pred.toFixed(2)} kg from intake but actually went <b>${actual >= 0 ? "+" : ""}${actual.toFixed(2)} kg</b> — likely water/glycogen noise; give it 2–3 weeks of rolling avg before adjusting targets.`);
+        } else {
+          out.push(`Predicted ${pred >= 0 ? "+" : ""}${pred.toFixed(2)} kg, measured <b>${actual >= 0 ? "+" : ""}${actual.toFixed(2)} kg</b> — directionally aligned. Difference is normal week-to-week variance.`);
+        }
+      }
+
+      // 3. Protein adherence
+      const pTxt = `Hit protein target <b>${r.proteinHits}/${r.n} days</b> (avg ${Math.round(r.avgProtein)} g vs. ${Math.round(r.avgProteinGoal)} g goal).`;
+      if (PROFILE && r.proteinHits <= 3 && (goalLabel === "cut" || goalLabel === "recomp")) {
+        out.push(pTxt + " For " + goalLabel + ", aim for 6/7+ to preserve muscle while in deficit.");
+      } else {
+        out.push(pTxt);
+      }
+
+      // 4. Training summary
+      if (r.trainingDays > 0) {
+        const perSession = Math.round(r.burnedTotal / r.trainingDays);
+        out.push(`<b>${r.trainingDays} training days</b> · ${r.burnedTotal} kcal burned total (~${perSession} kcal/session). Heaviest: ${fmtDate(r.heaviestTraining.date).dow} with ${r.heaviestTraining.training} kcal.`);
+      } else {
+        out.push("No training logged this week — workouts add kcal to your daily target, so logging matters.");
+      }
+
+      // 5. Adherence highlight
+      if (r.best) {
+        const f = fmtDate(r.best.date);
+        out.push(`Tightest day to target: <b>${f.dow}</b> (${r.best.diff >= 0 ? "+" : ""}${r.best.diff} kcal).`);
+      }
+
+      // 6. Body composition
+      if (r.bfDelta != null) {
+        const dir = r.bfDelta < 0 ? "dropped" : "rose";
+        out.push(`Body fat ${dir} <b>${Math.abs(r.bfDelta).toFixed(1)}%</b> since the previous reading (${r.bfNow.toFixed(1)}% latest).`);
+      }
+
+      return out;
+    }
+
+    function renderWeeklyReview() {
+      const r = weeklyReview();
+      $("#reviewRange").textContent = reviewRangeStr();
+
+      const set = (id, val, sub, valClass) => {
+        const el = document.getElementById(id);
+        el.querySelector(".val").innerHTML = val;
+        el.querySelector(".sub").innerHTML = sub;
+        const v = el.querySelector(".val");
+        v.classList.remove("good","bad");
+        if (valClass) v.classList.add(valClass);
+      };
+
+      // KPI 1 — energy balance
+      const balSign = r.avgDiff >= 0 ? "+" : "−";
+      const balCls  = r.avgDiff < 0 ? "good" : (r.avgDiff > 150 ? "bad" : "");
+      set("kpiBalance",
+          `${balSign}${Math.round(Math.abs(r.avgDiff))} <span class="unit">kcal/day</span>`,
+          `Ate ${Math.round(r.avgEaten)} · target ${Math.round(r.avgTarget)} avg`,
+          balCls);
+
+      // KPI 2 — calorie adherence
+      const pct = Math.round(r.kcalHits / r.n * 100);
+      set("kpiAdherence",
+          `${r.kcalHits}<span class="unit">/${r.n} days</span>`,
+          `${pct}% within ±200 kcal of target`);
+
+      // KPI 3 — protein hits
+      set("kpiProtein",
+          `${r.proteinHits}<span class="unit">/${r.n} days</span>`,
+          `Avg ${Math.round(r.avgProtein)} g / ${Math.round(r.avgProteinGoal)} g goal`,
+          r.proteinHits >= 5 ? "good" : (r.proteinHits <= 2 ? "bad" : ""));
+
+      // KPI 4 — training
+      set("kpiTraining",
+          `${r.trainingDays}<span class="unit"> days</span>`,
+          `${r.burnedTotal} kcal burned${r.trainingDays > 0 ? ` · ~${Math.round(r.burnedTotal/r.trainingDays)}/session` : ""}`);
+
+      // KPI 5 — weight trend
+      if (r.weightAvgNow != null) {
+        const dTxt = r.weightDelta != null
+          ? `${r.weightDelta >= 0 ? "+" : ""}${r.weightDelta.toFixed(2)} kg this week`
+          : "Need 8+ days for delta";
+        set("kpiWeight",
+            `${r.weightAvgNow.toFixed(1)} <span class="unit">kg</span>`,
+            `7-day avg · ${dTxt}`,
+            r.weightDelta == null ? "" : (r.weightDelta < 0 ? "good" : (r.weightDelta > 0.2 ? "bad" : "")));
+      } else {
+        set("kpiWeight", `—`, "No weight logged");
+      }
+
+      // KPI 6 — body fat
+      if (r.bfNow != null) {
+        const dTxt = r.bfDelta != null
+          ? `${r.bfDelta >= 0 ? "+" : ""}${r.bfDelta.toFixed(1)}% since last`
+          : "Need 2+ readings";
+        set("kpiBf",
+            `${r.bfNow.toFixed(1)} <span class="unit">%</span>`,
+            dTxt,
+            r.bfDelta == null ? "" : (r.bfDelta < 0 ? "good" : (r.bfDelta > 0 ? "bad" : "")));
+      } else {
+        set("kpiBf", `—`, "No body-fat reading");
+      }
+
+      // Insights
+      const insightsEl = $("#reviewInsights");
+      insightsEl.innerHTML = "";
+      reviewInsights(r).forEach(text => {
+        const li = document.createElement("li");
+        li.innerHTML = text;
+        insightsEl.appendChild(li);
+      });
+
+      // Daily delta chart
+      const labels = r.days.map(d => fmtDate(d.date).dow);
+      const diffs  = r.days.map(d => d.diff);
+      destroy("review");
+      charts.review = new Chart($("#reviewDiffChart"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            data: diffs,
+            backgroundColor: diffs.map(d => d > 0 ? "#c33d2e" : "#347f72"),
+            borderRadius: 4,
+            barThickness: 30,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.raw >= 0 ? "+" : ""}${c.raw} kcal vs. target` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#24211d", font: { weight: "600" } } },
+            y: {
+              grid: { color: "#ece2ce" },
+              ticks: { color: "#71695d", callback: v => (v > 0 ? "+" : "") + v + " kcal" },
+            },
+          },
+          onClick: (_e, els) => { if (els.length) { activeIdx = els[0].index; renderAll(); } },
+        }
+      });
+    }
+
+    function renderAll() {
+      renderProfileBar();
+      renderDayPicker();
+      renderMeals();
+      renderTargets();
+      renderRing();
+      renderMacroChart();
+      renderTrend();
+      renderStack();
+      renderBodyComp();
+      renderTraining();
+      renderWeeklyReview();
+    }
+
+    // ---------- Repository layer ----------
+    // Single point of contact between UI and persistence. When signed in to
+    // Supabase, methods hit Postgres; otherwise they fall back to localStorage.
+    // `showDemo` is true only for unauthenticated visitors — they see seeded
+    // demo data; authenticated users start with an empty account.
+    const repo = {
+      showDemo: true,
+      get authed() { return !!SESSION; },
+
+      profile: {
+        async get() {
+          if (repo.authed) {
+            const { data, error } = await SB.from("profiles")
+              .select("*")
+              .eq("user_id", SESSION.user.id)
+              .maybeSingle();
+            if (error) { console.error("profile.get:", error); return null; }
+            return data ? rowToProfile(data) : null;
+          }
+          return loadProfile();
+        },
+        async save(p) {
+          if (repo.authed) {
+            const row = { user_id: SESSION.user.id, ...profileToRow(p) };
+            const { error } = await SB.from("profiles").upsert(row, { onConflict: "user_id" });
+            if (error) throw error;
+            return;
+          }
+          saveProfile(p);
+        },
+        async clear() {
+          if (repo.authed) {
+            const { error } = await SB.from("profiles")
+              .delete()
+              .eq("user_id", SESSION.user.id);
+            if (error) console.error("profile.clear:", error);
+            return;
+          }
+          clearProfile();
+        },
+      },
+      weight: {
+        async list() {
+          if (repo.authed) {
+            const { data, error } = await SB.from("weight_log")
+              .select("*")
+              .eq("user_id", SESSION.user.id)
+              .is("deleted_at", null)
+              .order("date", { ascending: true });
+            if (error) { console.error("weight.list:", error); return []; }
+            return data.map(rowToWeightEntry);
+          }
+          return loadWeightLog() || [];
+        },
+        async upsert(entry) {
+          // In-memory update — same for both backends so UI updates immediately.
+          if (WEIGHT_LOG.some(e => e.seeded)) {
+            WEIGHT_LOG = WEIGHT_LOG.filter(e => !e.seeded);
+          }
+          if (!entry.id) entry.id = (crypto?.randomUUID?.() ?? ("w_" + Date.now()));
+          const idx = WEIGHT_LOG.findIndex(e => e.date === entry.date && !e.seeded);
+          if (idx >= 0) WEIGHT_LOG[idx] = { ...WEIGHT_LOG[idx], ...entry };
+          else WEIGHT_LOG.push(entry);
+          WEIGHT_LOG.sort((a, b) => a.date.localeCompare(b.date));
+
+          if (repo.authed) {
+            // Unique-where-deleted-is-null partial index → select-then-update-or-insert.
+            const { data: existing } = await SB.from("weight_log")
+              .select("id")
+              .eq("user_id", SESSION.user.id)
+              .eq("date", entry.date)
+              .is("deleted_at", null)
+              .maybeSingle();
+            const patch = {
+              weight_kg: Number(entry.weight),
+              body_fat_pct: entry.bodyFat == null ? null : Number(entry.bodyFat),
+            };
+            if (existing) {
+              const { error } = await SB.from("weight_log").update(patch).eq("id", existing.id);
+              if (error) throw error;
+            } else {
+              const { error } = await SB.from("weight_log").insert({
+                id: entry.id,
+                user_id: SESSION.user.id,
+                date: entry.date,
+                ...patch,
+              });
+              if (error) throw error;
+            }
+            return;
+          }
+          saveWeightLog(WEIGHT_LOG);
+        },
+      },
+      workouts: {
+        async list() {
+          if (repo.authed) {
+            const { data, error } = await SB.from("workouts")
+              .select("*")
+              .eq("user_id", SESSION.user.id)
+              .is("deleted_at", null)
+              .order("date", { ascending: true });
+            if (error) { console.error("workouts.list:", error); return []; }
+            return data.map(rowToWorkout);
+          }
+          return loadWorkouts() || [];
+        },
+        async add(entry) {
+          if (WORKOUTS.some(w => w.seeded)) {
+            WORKOUTS = WORKOUTS.filter(w => !w.seeded);
+          }
+          WORKOUTS.push(entry);
+          if (repo.authed) {
+            const { error } = await SB.from("workouts").insert(workoutToRow(entry));
+            if (error) throw error;
+            return;
+          }
+          saveWorkouts(WORKOUTS);
+        },
+        async remove(id) {
+          WORKOUTS = WORKOUTS.filter(w => w.id !== id);
+          if (repo.authed) {
+            // Soft delete — sets deleted_at so future delta sync sees the tombstone.
+            const { error } = await SB.from("workouts")
+              .update({ deleted_at: new Date().toISOString() })
+              .eq("id", id);
+            if (error) console.error("workouts.remove:", error);
+            return;
+          }
+          saveWorkouts(WORKOUTS);
+        },
+      },
+      meals: {
+        async allByDate() {
+          if (repo.authed) {
+            const { data, error } = await SB.from("meal_entries")
+              .select("*")
+              .eq("user_id", SESSION.user.id)
+              .is("deleted_at", null)
+              .order("date", { ascending: true });
+            if (error) { console.error("meals.allByDate:", error); return {}; }
+            const groups = {};
+            for (const row of data) {
+              if (!groups[row.date]) groups[row.date] = [];
+              groups[row.date].push(rowToMealEntry(row));
+            }
+            return groups;
+          }
+          return loadUserMeals();
+        },
+        async deletedSeeds() {
+          // Authed users don't see demo seeds, so no tombstones to track.
+          if (repo.authed) return new Set();
+          return loadDeletedSeeds();
+        },
+        async add(date, entry) {
+          if (!USER_MEAL_LOG[date]) USER_MEAL_LOG[date] = [];
+          USER_MEAL_LOG[date].push(entry);
+          if (repo.authed) {
+            const { error } = await SB.from("meal_entries").insert(mealEntryToRow(date, entry));
+            if (error) throw error;
+            return;
+          }
+          saveUserMeals();
+        },
+        async remove(date, id, { seeded } = {}) {
+          if (seeded) {
+            // Seeded entries only exist in demo (unauthed) mode.
+            DELETED_SEEDS.add(id);
+            if (!repo.authed) saveDeletedSeeds();
+            return;
+          }
+          USER_MEAL_LOG[date] = (USER_MEAL_LOG[date] || []).filter(e => e.id !== id);
+          if (USER_MEAL_LOG[date].length === 0) delete USER_MEAL_LOG[date];
+          if (repo.authed) {
+            const { error } = await SB.from("meal_entries")
+              .update({ deleted_at: new Date().toISOString() })
+              .eq("id", id);
+            if (error) console.error("meals.remove:", error);
+            return;
+          }
+          saveUserMeals();
+        },
+      },
+      usda: {
+        async search(q) { return searchUsda(q); },
+      },
+    };
+
+    // Map between app's camelCase profile shape and the DB row's snake_case columns.
+    function rowToProfile(row) {
+      return {
+        sex: row.sex,
+        age: row.age,
+        height: row.height_cm == null ? null : Number(row.height_cm),
+        weight: row.weight_kg == null ? null : Number(row.weight_kg),
+        bodyFat: row.body_fat_pct == null ? null : Number(row.body_fat_pct),
+        activity: row.activity,
+        goal: row.goal,
+      };
+    }
+    function profileToRow(p) {
+      return {
+        sex: p.sex || null,
+        age: p.age == null ? null : Number(p.age),
+        height_cm: p.height == null ? null : Number(p.height),
+        weight_kg: p.weight == null ? null : Number(p.weight),
+        body_fat_pct: p.bodyFat == null ? null : Number(p.bodyFat),
+        activity: p.activity || null,
+        goal: p.goal || null,
+      };
+    }
+    function rowToWeightEntry(row) {
+      const e = { id: row.id, date: row.date, weight: Number(row.weight_kg) };
+      if (row.body_fat_pct != null) e.bodyFat = Number(row.body_fat_pct);
+      return e;
+    }
+    function rowToWorkout(row) {
+      return {
+        id: row.id,
+        date: row.date,
+        type: row.type,
+        min: row.duration_min,
+        intensity: row.intensity,
+      };
+    }
+    function workoutToRow(w) {
+      return {
+        id: w.id,
+        user_id: SESSION.user.id,
+        date: w.date,
+        type: w.type,
+        duration_min: Number(w.min),
+        intensity: w.intensity || "moderate",
+      };
+    }
+    function rowToMealEntry(row) {
+      const e = {
+        id: row.id,
+        meal: row.meal,
+        g: Number(row.grams),
+        name: row.name,
+        brand: row.brand,
+        per100: {
+          kcal: Number(row.kcal_per_100g),
+          c:    Number(row.c_per_100g),
+          p:    Number(row.p_per_100g),
+          f:    Number(row.f_per_100g),
+        },
+        source: row.source,
+      };
+      if (row.fdc_id != null) e.fdcId = row.fdc_id;
+      return e;
+    }
+    function mealEntryToRow(date, entry) {
+      return {
+        id: entry.id,
+        user_id: SESSION.user.id,
+        date,
+        meal: entry.meal,
+        name: entry.name,
+        brand: entry.brand ?? null,
+        fdc_id: entry.fdcId ?? null,
+        grams: Number(entry.g),
+        kcal_per_100g: Number(entry.per100.kcal),
+        c_per_100g:    Number(entry.per100.c ?? 0),
+        p_per_100g:    Number(entry.per100.p ?? 0),
+        f_per_100g:    Number(entry.per100.f ?? 0),
+        source: entry.source ?? "manual",
+      };
+    }
+
+    async function initRepo() {
+      repo.showDemo = !SESSION;
+
+      PROFILE = await repo.profile.get();
+      DERIVED = deriveTargets(PROFILE);
+
+      WEIGHT_LOG = await repo.weight.list();
+      if (repo.showDemo && !WEIGHT_LOG.length) WEIGHT_LOG = seedWeightLog();
+
+      WORKOUTS = await repo.workouts.list();
+      if (repo.showDemo && !WORKOUTS.length) WORKOUTS = seedWorkouts();
+
+      USER_MEAL_LOG = await repo.meals.allByDate();
+      DELETED_SEEDS = await repo.meals.deletedSeeds();
+    }
+
+    // ---------- Auth wiring ----------
+    function renderAuthBar() {
+      const status = document.getElementById("authStatus");
+      const btn = document.getElementById("authBtn");
+      if (!SB) {
+        status.innerHTML = `<span class="demo-pill">Local</span>localStorage only — Supabase not configured`;
+        btn.style.display = "none";
+        return;
+      }
+      if (SESSION) {
+        status.innerHTML = `<span class="live-pill">Live</span><b>${SESSION.user.email}</b>`;
+        btn.textContent = "Sign out";
+      } else {
+        status.innerHTML = `<span class="demo-pill">Demo</span>Sign in to save your own data`;
+        btn.textContent = "Sign in";
+      }
+    }
+
+    async function bootAuth() {
+      if (!SB) { renderAuthBar(); return; }
+      const { data } = await SB.auth.getSession();
+      SESSION = data.session;
+      renderAuthBar();
+
+      SB.auth.onAuthStateChange((_event, session) => {
+        const wasSignedIn = !!SESSION;
+        SESSION = session;
+        renderAuthBar();
+        // Only fully re-init when the sign-in state actually flips
+        // (auth state events also fire on token refresh).
+        if (wasSignedIn !== !!SESSION) {
+          initRepo().then(() => renderAll()).catch(err => console.error("re-init failed:", err));
+        }
+      });
+    }
+
+    // Sign-in modal wiring
+    const authModal = document.getElementById("authModal");
+    document.getElementById("authBtn").addEventListener("click", async () => {
+      if (!SB) return;
+      if (SESSION) {
+        await SB.auth.signOut();   // onAuthStateChange handles re-init
+      } else {
+        document.getElementById("authMsg").textContent = "";
+        document.getElementById("authMsg").classList.remove("err");
+        authModal.hidden = false;
+        setTimeout(() => document.querySelector("#authForm [name=email]").focus(), 30);
+      }
+    });
+    document.getElementById("closeAuth").addEventListener("click", () => { authModal.hidden = true; });
+    document.querySelector("[data-close-auth]").addEventListener("click", () => { authModal.hidden = true; });
+
+    document.getElementById("authForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const email = e.target.email.value.trim();
+      const msg = document.getElementById("authMsg");
+      const btn = document.getElementById("authSubmit");
+      if (!email) return;
+      msg.classList.remove("err");
+      msg.textContent = "Sending…";
+      btn.disabled = true;
+      try {
+        const { error } = await SB.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.href },
+        });
+        if (error) throw error;
+        msg.textContent = `Check ${email} for the magic link. You can close this window.`;
+      } catch (err) {
+        msg.classList.add("err");
+        msg.textContent = `Failed: ${err.message || err}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    bootAuth().then(() => initRepo())
+      .then(() => renderAll())
+      .catch(err => {
+        console.error("initRepo failed:", err);
+        renderAll();   // fall back to whatever's loaded
+      });
+  </script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+name: Monthly Supabase backup
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"  # 04:00 UTC on the 1st of every month
+  workflow_dispatch:       # manual trigger from the Actions tab
+
+jobs:
+  pg_dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Postgres client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          # Set this in repo Settings → Secrets → Actions.
+          # Get it from Supabase: Project Settings → Database → Connection string (URI),
+          # use the "Session pooler" or "Direct connection" string.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          STAMP=$(date -u +%Y-%m-%d)
+          mkdir -p backups
+          pg_dump --no-owner --no-privileges --format=custom \
+            "$SUPABASE_DB_URL" > "backups/nutrition-$STAMP.dump"
+          ls -lh backups/
+
+      - name: Upload as workflow artifact (90-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_number }}
+          path: backups/*.dump
+          retention-days: 90
+
+      # Optional: also push to Cloudflare R2 for indefinite retention.
+      # Uncomment once you've configured R2 + secrets.
+      #
+      # - name: Upload to Cloudflare R2
+      #   env:
+      #     R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      #     R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      #     R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      #     R2_BUCKET: nutrition-backups
+      #   run: |
+      #     pip install awscli
+      #     aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+      #     aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+      #     aws s3 cp backups/ "s3://$R2_BUCKET/" --recursive \
+      #       --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
